@@ -46,7 +46,7 @@ export default function UnloadBlong() {
   const handleAddFish = fishId => {
     const fish = fishOptions.find(f => f.id === fishId);
     if (fish && !selectedFish.some(f => f.id === fishId)) {
-      setSelectedFish([...selectedFish, { ...fish, pallets: [] }]);
+      setSelectedFish([...selectedFish, { ...fish, pallets: [], susut: 0 }]);
     }
     setShowFishModal(false);
   };
@@ -70,16 +70,35 @@ export default function UnloadBlong() {
     setSelectedFish(newFish);
   };
 
-  const summaryData = selectedFish.map(fish => {
+  const handleSusutChange = (fishIdx, value) => {
+    const newFish = [...selectedFish];
+    newFish[fishIdx].susut = value;
+    setSelectedFish(newFish);
+  };
+
+  const summaryData = selectedFish.map((fish, index) => {
     const totalBruto = (fish.pallets || []).reduce((sum, p) => sum + (p.bruto || 0), 0);
     const totalNetto = (fish.pallets || []).reduce((sum, p) => sum + (p.netto || 0), 0);
-    return { key: fish.id, fish: fish.name, totalBruto, totalNetto };
+    return {
+      key: fish.id,
+      fish: fish.name,
+      totalBruto,
+      totalNetto,
+      susut: (
+        <InputNumber
+          min={0}
+          value={fish.susut || 0}
+          onChange={(value) => handleSusutChange(index, value)}
+        />
+      )
+    };
   });
 
   const summaryColumns = [
     { title: 'Nama Ikan', dataIndex: 'fish', key: 'fish' },
     { title: 'Total Bruto', dataIndex: 'totalBruto', key: 'totalBruto' },
     { title: 'Netto Total', dataIndex: 'totalNetto', key: 'totalNetto' },
+    { title: 'Susut', dataIndex: 'susut', key: 'susut' }
   ];
 
   const handleFinalSubmit = () => {
@@ -95,10 +114,8 @@ export default function UnloadBlong() {
     };
     selectedFish.forEach(fish => {
       const totalNetto = (fish.pallets || []).reduce((sum, p) => sum + (p.netto || 0), 0);
-      payload.items[fish.id] = [totalNetto, 0]; // <-- Susut default 0
-      payload.stok_ikan[fish.id] = (fish.pallets || []).map(p => [
-        p.palletId,p.netto,p.freezerId
-      ]);
+      payload.items[fish.id] = [totalNetto, fish.susut || 0];
+      payload.stok_ikan[fish.id] = (fish.pallets || []).map(p => [p.palletId, p.netto, p.freezerId]);
     });
     console.log('Payload JSON:', JSON.stringify(payload, null, 2));
   };
@@ -115,11 +132,11 @@ export default function UnloadBlong() {
           <Title level={2}>Bongkar Blong</Title>
 
           <Form form={form} layout="vertical" initialValues={{ tanggal: dayjs() }}>
-            <Form.Item name="tanggal" label="Tanggal" rules={[{ required: true, message: 'Pilih tanggal' }]}>
+            <Form.Item name="tanggal" label="Tanggal" rules={[{ required: true, message: 'Pilih tanggal' }]}> 
               <DatePicker style={{ width: 240 }} />
             </Form.Item>
 
-            <Form.Item name="kapal" label="Kapal" rules={[{ required: true, message: 'Pilih kapal' }]}>
+            <Form.Item name="kapal" label="Kapal" rules={[{ required: true, message: 'Pilih kapal' }]}> 
               <Select placeholder="Pilih kapal">
                 <Option value="1">Kapal Bahagia</Option>
                 <Option value="2">Kapal Sentosa</Option>
@@ -127,7 +144,7 @@ export default function UnloadBlong() {
               </Select>
             </Form.Item>
 
-            <Form.Item name="namaGudang" label="Nama Gudang" rules={[{ required: true, message: 'Pilih gudang' }]}>
+            <Form.Item name="namaGudang" label="Nama Gudang" rules={[{ required: true, message: 'Pilih gudang' }]}> 
               <Select placeholder="Pilih gudang">
                 <Option value="A">Gudang Pusat</Option>
                 <Option value="B">Gudang Timur</Option>
@@ -138,7 +155,7 @@ export default function UnloadBlong() {
             <Form.Item label="Armada Angkutan" required>
               <Row gutter={16}>
                 <Col span={12}>
-                  <Form.Item name="armadaType" noStyle rules={[{ required: true, message: 'Pilih jenis armada' }]}>
+                  <Form.Item name="armadaType" noStyle rules={[{ required: true, message: 'Pilih jenis armada' }]}> 
                     <Select placeholder="Jenis armada">
                       <Option value="TRUK">Truk</Option>
                       <Option value="KERETA">Kereta</Option>
@@ -147,19 +164,18 @@ export default function UnloadBlong() {
                   </Form.Item>
                 </Col>
                 <Col span={12}>
-                  <Form.Item name="armadaDetail" noStyle rules={[{ required: true, message: 'Masukkan detail armada' }]}>
+                  <Form.Item name="armadaDetail" noStyle rules={[{ required: true, message: 'Masukkan detail armada' }]}> 
                     <Input placeholder="Detail armada" />
                   </Form.Item>
                 </Col>
               </Row>
             </Form.Item>
 
-            <Form.Item name="grp" label="GRP" valuePropName="checked" rules={[{ required: true, message: 'Tentukan status GRP' }]}>
+            <Form.Item name="grp" label="GRP" valuePropName="checked"> 
               <Switch />
             </Form.Item>
           </Form>
 
-          {/* Fish cards and pallet inputs */}
           <div className="mt-6">
             <Button icon={<PlusIcon size={16} />} onClick={() => setShowFishModal(true)}>
               Tambah Ikan
@@ -220,7 +236,6 @@ export default function UnloadBlong() {
               ))}
             </Row>
 
-            {/* Summary Table */}
             {summaryData.length > 0 && (
               <div className="mt-8">
                 <Title level={3}>Summary</Title>
@@ -228,14 +243,12 @@ export default function UnloadBlong() {
               </div>
             )}
 
-            {/* Final Submit */}
             <div className="mt-6 text-right">
               <Button type="primary" onClick={handleFinalSubmit}>
                 Submit
               </Button>
             </div>
 
-            {/* Fish selection modal */}
             <Modal
               title="Pilih Jenis Ikan"
               visible={showFishModal}
