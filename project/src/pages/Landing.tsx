@@ -1,54 +1,44 @@
 import React from 'react';
 import { Layout, Typography, Row, Col, Card } from 'antd';
 import { useNavigate } from 'react-router-dom';
-import { 
-  ShoppingCartIcon,
-  StoreIcon,
-} from 'lucide-react';
+import { ShoppingCartIcon, StoreIcon } from 'lucide-react';
 import Header from '../components/Header';
 import FooterSection from '../components/FooterSection';
 
 const { Content } = Layout;
 const { Title } = Typography;
 
-const Landing: React.FC = () => {
+const Landing = () => {
   const navigate = useNavigate();
 
   return (
     <Layout className="min-h-screen">
       <Header />
-      
       <Content>
         <div className="container mx-auto px-6 py-12">
-          <Row gutter={[24, 24]} className="mb-12">
+          <Row gutter={[24, 24]}>
             <Col xs={24} md={12}>
-              <Card 
-                hoverable 
-                className="h-64 flex items-center justify-center cursor-pointer transition-all hover:shadow-lg"
+              <Card
+                hoverable
+                className="h-64 flex items-center justify-center cursor-pointer hover:shadow-lg"
                 onClick={() => navigate('/purchase')}
               >
-                <div className="text-center">
-                  <ShoppingCartIcon size={48} className="text-blue-500 mb-4" />
-                  <Title level={2}>Pembelian</Title>
-                </div>
+                <ShoppingCartIcon size={48} className="text-blue-500 mb-4" />
+                <Title level={2}>Pembelian</Title>
               </Card>
             </Col>
             <Col xs={24} md={12}>
-              <Card 
-                hoverable 
-                className="h-64 flex items-center justify-center cursor-pointer transition-all hover:shadow-lg"
-                onClick={() => console.log('Penjualan clicked')}
+              <Card
+                hoverable
+                className="h-64 flex items-center justify-center cursor-pointer hover:shadow-lg"
               >
-                <div className="text-center">
-                  <StoreIcon size={48} className="text-green-500 mb-4" />
-                  <Title level={2}>Penjualan</Title>
-                </div>
+                <StoreIcon size={48} className="text-green-500 mb-4" />
+                <Title level={2}>Penjualan</Title>
               </Card>
             </Col>
           </Row>
         </div>
       </Content>
-      
       <FooterSection />
     </Layout>
   );

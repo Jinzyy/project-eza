@@ -97,8 +97,8 @@ export default function UnloadBlong() {
   const summaryColumns = [
     { title: 'Nama Ikan', dataIndex: 'fish', key: 'fish' },
     { title: 'Total Bruto', dataIndex: 'totalBruto', key: 'totalBruto' },
+    { title: 'Susut', dataIndex: 'susut', key: 'susut' },
     { title: 'Netto Total', dataIndex: 'totalNetto', key: 'totalNetto' },
-    { title: 'Susut', dataIndex: 'susut', key: 'susut' }
   ];
 
   const handleFinalSubmit = () => {
@@ -171,7 +171,7 @@ export default function UnloadBlong() {
               </Row>
             </Form.Item>
 
-            <Form.Item name="grp" label="GRP" valuePropName="checked"> 
+            <Form.Item name="grp" label="GRP" valuePropName="checked" rules={[{ required: true, message: 'Tentukan status GRP' }]}> 
               <Switch />
             </Form.Item>
           </Form>
