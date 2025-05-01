@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import dayjs from 'dayjs';
 import {
   Layout,
@@ -13,11 +13,14 @@ import {
   Modal,
   DatePicker,
   Table,
-  Switch
+  Switch,
+  message
 } from 'antd';
 import InputNumber from 'antd/lib/input-number';
 import { ArrowLeftIcon, PlusIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
+import config from '../../config';
 import Header from '../../components/Header';
 import FooterSection from '../../components/FooterSection';
 
@@ -35,13 +38,37 @@ export default function UnloadBlong() {
   const navigate = useNavigate();
   const [form] = Form.useForm();
   const [showFishModal, setShowFishModal] = useState(false);
-  const [fishOptions] = useState([
-    { id: 'I1', name: 'Ikan Kakap' },
-    { id: 'I2', name: 'Ikan Tuna' },
-    { id: 'I3', name: 'Ikan Salmon' },
-    { id: 'I4', name: 'Ikan Lele' }
-  ]);
+  const [fishOptions, setFishOptions] = useState([]);
+  const [kapalOptions, setKapalOptions] = useState([]);
+  const [gudangOptions, setGudangOptions] = useState([]);
+  const [freezerOptions, setFreezerOptions] = useState([]);
   const [selectedFish, setSelectedFish] = useState([]);
+
+  const token = sessionStorage.getItem('token');
+  const authHeader = { headers: { Authorization: token } };
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [ikanRes, kapalRes, gudangRes, freezerRes] = await Promise.all([
+          axios.get(`${config.API_BASE_URL}/ikan`, authHeader),
+          axios.get(`${config.API_BASE_URL}/kapal`, authHeader),
+          axios.get(`${config.API_BASE_URL}/gudang`, authHeader),
+          axios.get(`${config.API_BASE_URL}/freezer`, authHeader)
+        ]);
+
+        setFishOptions(ikanRes.data);
+        setKapalOptions(kapalRes.data);
+        setGudangOptions(gudangRes.data);
+        setFreezerOptions(freezerRes.data);
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        message.error('Gagal memuat data dari server.');
+      }
+    };
+
+    fetchData();
+  }, []);
 
   const handleAddFish = fishId => {
     const fish = fishOptions.find(f => f.id === fishId);
@@ -53,7 +80,6 @@ export default function UnloadBlong() {
 
   const handleAddPallet = fishIdx => {
     const newFish = [...selectedFish];
-    if (!newFish[fishIdx].pallets) newFish[fishIdx].pallets = [];
     newFish[fishIdx].pallets.push({ palletId: null, bruto: null, netto: null, freezerId: null });
     setSelectedFish(newFish);
   };
@@ -62,11 +88,13 @@ export default function UnloadBlong() {
     const newFish = [...selectedFish];
     const pallet = newFish[fishIdx].pallets[palletIdx];
     pallet[field] = value;
+
     if (field === 'bruto' || field === 'palletId') {
       const bruto = field === 'bruto' ? value : pallet.bruto;
       const weight = palletWeights[pallet.palletId] || 0;
       pallet.netto = typeof bruto === 'number' ? bruto - weight : null;
     }
+
     setSelectedFish(newFish);
   };
 
@@ -101,23 +129,32 @@ export default function UnloadBlong() {
     { title: 'Netto Total', dataIndex: 'totalNetto', key: 'totalNetto' },
   ];
 
-  const handleFinalSubmit = () => {
-    const values = form.getFieldsValue();
-    const payload = {
-      id_kapal: values.kapal,
-      id_gudang: values.namaGudang,
-      metode_kapal: `${values.armadaType}-${values.armadaDetail}`,
-      grp: values.grp || false,
-      tanggal_terima: values.tanggal.format('YYYY-MM-DD'),
-      items: {},
-      stok_ikan: {}
-    };
-    selectedFish.forEach(fish => {
-      const totalNetto = (fish.pallets || []).reduce((sum, p) => sum + (p.netto || 0), 0);
-      payload.items[fish.id] = [totalNetto, fish.susut || 0];
-      payload.stok_ikan[fish.id] = (fish.pallets || []).map(p => [p.palletId, p.netto, p.freezerId]);
-    });
-    console.log('Payload JSON:', JSON.stringify(payload, null, 2));
+  const handleFinalSubmit = async () => {
+    try {
+      const values = await form.validateFields();
+      const payload = {
+        id_kapal: values.kapal,
+        id_gudang: values.namaGudang,
+        metode_kapal: `${values.armadaType}-${values.armadaDetail}`,
+        grp: values.grp || false,
+        tanggal_terima: values.tanggal.format('YYYY-MM-DD'),
+        items: {},
+        stok_ikan: {}
+      };
+
+      selectedFish.forEach(fish => {
+        const totalNetto = (fish.pallets || []).reduce((sum, p) => sum + (p.netto || 0), 0);
+        payload.items[fish.id] = [totalNetto, fish.susut || 0];
+        payload.stok_ikan[fish.id] = (fish.pallets || []).map(p => [p.palletId, p.netto, p.freezerId]);
+      });
+
+      await axios.post(`${config.API_BASE_URL}/penerimaan_barang`, payload, authHeader);
+      message.success('Data berhasil dikirim!');
+      navigate('/purchase');
+    } catch (error) {
+      console.error('Submission error:', error);
+      message.error('Gagal mengirim data. Periksa kembali input Anda.');
+    }
   };
 
   return (
@@ -132,30 +169,30 @@ export default function UnloadBlong() {
           <Title level={2}>Bongkar Blong</Title>
 
           <Form form={form} layout="vertical" initialValues={{ tanggal: dayjs() }}>
-            <Form.Item name="tanggal" label="Tanggal" rules={[{ required: true, message: 'Pilih tanggal' }]}> 
+            <Form.Item name="tanggal" label="Tanggal" rules={[{ required: true, message: 'Pilih tanggal' }]}>
               <DatePicker style={{ width: 240 }} />
             </Form.Item>
 
-            <Form.Item name="kapal" label="Kapal" rules={[{ required: true, message: 'Pilih kapal' }]}> 
+            <Form.Item name="kapal" label="Kapal" rules={[{ required: true, message: 'Pilih kapal' }]}>
               <Select placeholder="Pilih kapal">
-                <Option value="1">Kapal Bahagia</Option>
-                <Option value="2">Kapal Sentosa</Option>
-                <Option value="3">Kapal Maju</Option>
+                {kapalOptions.map(k => (
+                  <Option key={k.id} value={k.id}>{k.nama}</Option>
+                ))}
               </Select>
             </Form.Item>
 
-            <Form.Item name="namaGudang" label="Nama Gudang" rules={[{ required: true, message: 'Pilih gudang' }]}> 
+            <Form.Item name="namaGudang" label="Nama Gudang" rules={[{ required: true, message: 'Pilih gudang' }]}>
               <Select placeholder="Pilih gudang">
-                <Option value="A">Gudang Pusat</Option>
-                <Option value="B">Gudang Timur</Option>
-                <Option value="C">Gudang Barat</Option>
+                {gudangOptions.map(g => (
+                  <Option key={g.id} value={g.id}>{g.nama}</Option>
+                ))}
               </Select>
             </Form.Item>
 
             <Form.Item label="Armada Angkutan" required>
               <Row gutter={16}>
                 <Col span={12}>
-                  <Form.Item name="armadaType" noStyle rules={[{ required: true, message: 'Pilih jenis armada' }]}> 
+                  <Form.Item name="armadaType" noStyle rules={[{ required: true, message: 'Pilih jenis armada' }]}>
                     <Select placeholder="Jenis armada">
                       <Option value="TRUK">Truk</Option>
                       <Option value="KERETA">Kereta</Option>
@@ -164,14 +201,14 @@ export default function UnloadBlong() {
                   </Form.Item>
                 </Col>
                 <Col span={12}>
-                  <Form.Item name="armadaDetail" noStyle rules={[{ required: true, message: 'Masukkan detail armada' }]}> 
+                  <Form.Item name="armadaDetail" noStyle rules={[{ required: true, message: 'Masukkan detail armada' }]}>
                     <Input placeholder="Detail armada" />
                   </Form.Item>
                 </Col>
               </Row>
             </Form.Item>
 
-            <Form.Item name="grp" label="GRP" valuePropName="checked" rules={[{ required: true, message: 'Tentukan status GRP' }]}> 
+            <Form.Item name="grp" label="GRP" valuePropName="checked">
               <Switch />
             </Form.Item>
           </Form>
@@ -221,9 +258,9 @@ export default function UnloadBlong() {
                             value={pallet.freezerId}
                             onChange={val => handlePalletChange(fishIdx, palletIdx, 'freezerId', val)}
                           >
-                            <Option value="F1">F1</Option>
-                            <Option value="F2">F2</Option>
-                            <Option value="F3">F3</Option>
+                            {freezerOptions.map(fz => (
+                              <Option key={fz.id} value={fz.id}>{fz.nama}</Option>
+                            ))}
                           </Select>
                         </Col>
                       </Row>
@@ -251,11 +288,15 @@ export default function UnloadBlong() {
 
             <Modal
               title="Pilih Jenis Ikan"
-              visible={showFishModal}
+              open={showFishModal}
               onCancel={() => setShowFishModal(false)}
               footer={null}
             >
-              <Select placeholder="Pilih jenis ikan" style={{ width: '100%' }} onChange={handleAddFish}>
+              <Select
+                placeholder="Pilih jenis ikan"
+                style={{ width: '100%' }}
+                onChange={handleAddFish}
+              >
                 {fishOptions.map(f => (
                   <Option key={f.id} value={f.id}>
                     {f.name}

@@ -1,41 +1,52 @@
-import React, { useState } from 'react';
-import { Layout, Typography, Button, Table, Modal } from 'antd';
+import React, { useState, useEffect } from 'react';
+import { Layout, Typography, Button, Table, Modal, message } from 'antd';
 import { ArrowLeftIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import jsPDF from 'jspdf';
+import axios from 'axios';
 import Header from '../../components/Header';
 import FooterSection from '../../components/FooterSection';
+import config from '../../config'
 
 const { Content } = Layout;
 const { Title } = Typography;
 
-const receiptData = [
-  {
-    key: '1',
-    fishName: 'Ikan Kakap',
-    receivedKg: 200,
-    date: '2025-04-25',
-    supplier: 'PT Laut Segar',
-    notes: 'Diterima dalam kondisi baik',
-  },
-  {
-    key: '2',
-    fishName: 'Ikan Kembung',
-    receivedKg: 120,
-    date: '2025-04-28',
-    supplier: 'CV Laut Biru',
-    notes: 'Sebagian es mencair, perlu dicek ulang',
-  },
-];
-
 function GoodsReceipt() {
   const navigate = useNavigate();
+  const [receiptData, setReceiptData] = useState([]);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
 
+  const token = sessionStorage.getItem('token');
+  const authHeader = { headers: { Authorization: token } };
+
+  // Fetch data penerimaan
+  useEffect(() => {
+    axios.get(`${config.API_BASE_URL}/penerimaan_barang`, authHeader)
+    .then((res) => {
+      if (Array.isArray(res.data)) {
+        setReceiptData(res.data);
+      } else {
+        message.error('Format data tidak sesuai.');
+        setReceiptData([]);
+      }
+    })
+    .catch((err) => {
+      message.error('Gagal memuat data penerimaan barang');
+      console.error(err);
+    });
+  }, []);
+
   const showDetail = (record) => {
-    setSelectedItem(record);
-    setIsModalVisible(true);
+    axios.get(`${config.API_BASE_URL}/penerimaan_barang/${record.key}`, authHeader)
+    .then((res) => {
+      setSelectedItem(res.data);
+      setIsModalVisible(true);
+    })
+    .catch((err) => {
+      message.error('Gagal memuat detail penerimaan');
+      console.error(err);
+    });
   };
 
   const handlePrint = (record) => {
@@ -104,6 +115,7 @@ function GoodsReceipt() {
           <Table
             dataSource={receiptData}
             columns={columns}
+            rowKey="key"
             pagination={false}
             className="mt-6"
           />

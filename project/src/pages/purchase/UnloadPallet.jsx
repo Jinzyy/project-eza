@@ -148,7 +148,7 @@ export default function UnloadPallet() {
 
     try {
       const token = sessionStorage.getItem('token');
-      await axios.post(`${config.API_BASE_URL}/unload-pallet`, formData, {
+      await axios.post(`${config.API_BASE_URL}/penerimaan_barang`, formData, {
         headers: {
           Authorization: token,
         },
