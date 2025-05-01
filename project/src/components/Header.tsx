@@ -45,20 +45,6 @@ const Header: React.FC = () => {
           <span className="text-primary">Fish</span>
           <span>Market</span>
         </div>
-
-        {/* Hanya menu Dashboard */}
-        <Menu
-          mode="horizontal"
-          className="border-0 bg-transparent"
-          selectedKeys={['dashboard']}
-          items={[
-            {
-              key: 'dashboard',
-              label: 'Dashboard',
-              onClick: () => navigate('/dashboard'),
-            },
-          ]}
-        />
       </div>
 
       <div className="flex items-center">
