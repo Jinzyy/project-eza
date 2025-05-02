@@ -14,7 +14,7 @@ import {
   DatePicker,
   Table,
   Switch,
-  message
+  message,
 } from 'antd';
 import InputNumber from 'antd/lib/input-number';
 import { ArrowLeftIcon, PlusIcon } from 'lucide-react';
@@ -28,48 +28,69 @@ const { Content } = Layout;
 const { Title } = Typography;
 const { Option } = Select;
 
-const palletWeights = {
-  P1: 10,
-  P2: 15,
-  P3: 20
-};
-
 export default function UnloadBlong() {
   const navigate = useNavigate();
   const [form] = Form.useForm();
-  const [showFishModal, setShowFishModal] = useState(false);
+
+  // State for dropdown data
   const [fishOptions, setFishOptions] = useState([]);
   const [kapalOptions, setKapalOptions] = useState([]);
   const [gudangOptions, setGudangOptions] = useState([]);
   const [freezerOptions, setFreezerOptions] = useState([]);
+  const [palletOptions, setPalletOptions] = useState([]);
+  const [palletWeights, setPalletWeights] = useState({});
+
+  // Selected fish items
   const [selectedFish, setSelectedFish] = useState([]);
+  const [showFishModal, setShowFishModal] = useState(false);
 
   const token = sessionStorage.getItem('token');
   const authHeader = { headers: { Authorization: token } };
 
+  // Fetch all dropdown data
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [ikanRes, kapalRes, gudangRes, freezerRes] = await Promise.all([
+        const [ikanRes, kapalRes, gudangRes, freezerRes, palletRes] = await Promise.all([
           axios.get(`${config.API_BASE_URL}/ikan`, authHeader),
           axios.get(`${config.API_BASE_URL}/kapal`, authHeader),
           axios.get(`${config.API_BASE_URL}/gudang`, authHeader),
-          axios.get(`${config.API_BASE_URL}/freezer`, authHeader)
+          axios.get(`${config.API_BASE_URL}/freezer`, authHeader),
+          axios.get(`${config.API_BASE_URL}/pallet`, authHeader),
         ]);
 
-        setFishOptions(ikanRes.data);
-        setKapalOptions(kapalRes.data);
-        setGudangOptions(gudangRes.data);
-        setFreezerOptions(freezerRes.data);
+        // Map response data
+        setFishOptions(
+          ikanRes.data.data.map(i => ({ id: i.id_ikan, name: i.nama_ikan }))
+        );
+        setKapalOptions(
+          kapalRes.data.data.map(k => ({ id: k.id_kapal, nama: k.nama_kapal }))
+        );
+        setGudangOptions(
+          gudangRes.data.data.map(g => ({ id: g.id_gudang, nama: g.nama_gudang }))
+        );
+        setFreezerOptions(
+          freezerRes.data.data.map(f => ({ id: f.id_freezer, nama: f.nama_freezer }))
+        );
+        setPalletOptions(
+          palletRes.data.data.map(p => ({ id: p.id_pallet, nomor: p.nomor_pallet, berat: p.berat_pallet }))
+        );
+
+        // Build weight lookup by id_pallet
+        const weights = {};
+        palletRes.data.data.forEach(p => {
+          weights[p.id_pallet] = p.berat_pallet;
+        });
+        setPalletWeights(weights);
       } catch (error) {
         console.error('Error fetching data:', error);
         message.error('Gagal memuat data dari server.');
       }
     };
-
     fetchData();
   }, []);
 
+  // Add fish to selected list
   const handleAddFish = fishId => {
     const fish = fishOptions.find(f => f.id === fishId);
     if (fish && !selectedFish.some(f => f.id === fishId)) {
@@ -78,19 +99,22 @@ export default function UnloadBlong() {
     setShowFishModal(false);
   };
 
+  // Add a pallet entry under a fish
   const handleAddPallet = fishIdx => {
     const newFish = [...selectedFish];
     newFish[fishIdx].pallets.push({ palletId: null, bruto: null, netto: null, freezerId: null });
     setSelectedFish(newFish);
   };
 
+  // Handle changes in pallet fields
   const handlePalletChange = (fishIdx, palletIdx, field, value) => {
     const newFish = [...selectedFish];
     const pallet = newFish[fishIdx].pallets[palletIdx];
     pallet[field] = value;
 
+    // Recalculate netto if bruto or palletId changes
     if (field === 'bruto' || field === 'palletId') {
-      const bruto = field === 'bruto' ? value : pallet.bruto;
+      const bruto = pallet.bruto;
       const weight = palletWeights[pallet.palletId] || 0;
       pallet.netto = typeof bruto === 'number' ? bruto - weight : null;
     }
@@ -98,27 +122,36 @@ export default function UnloadBlong() {
     setSelectedFish(newFish);
   };
 
+  // Handle susut change
   const handleSusutChange = (fishIdx, value) => {
     const newFish = [...selectedFish];
     newFish[fishIdx].susut = value;
     setSelectedFish(newFish);
   };
 
+  // Remove a pallet entry
+  const handleRemovePallet = (fishIdx, palletIdx) => {
+    const newFish = [...selectedFish];
+    newFish[fishIdx].pallets.splice(palletIdx, 1); // Remove pallet at given index
+    setSelectedFish(newFish); // Update the state
+  };
+
+  // Prepare summary table data
   const summaryData = selectedFish.map((fish, index) => {
-    const totalBruto = (fish.pallets || []).reduce((sum, p) => sum + (p.bruto || 0), 0);
-    const totalNetto = (fish.pallets || []).reduce((sum, p) => sum + (p.netto || 0), 0);
+    const totalBruto = fish.pallets.reduce((sum, p) => sum + (p.bruto || 0), 0);
+    const totalNetto = fish.pallets.reduce((sum, p) => sum + (p.netto || 0), 0);
     return {
       key: fish.id,
       fish: fish.name,
       totalBruto,
-      totalNetto,
       susut: (
         <InputNumber
           min={0}
-          value={fish.susut || 0}
-          onChange={(value) => handleSusutChange(index, value)}
+          value={fish.susut}
+          onChange={val => handleSusutChange(index, val)}
         />
-      )
+      ),
+      totalNetto,
     };
   });
 
@@ -129,26 +162,32 @@ export default function UnloadBlong() {
     { title: 'Netto Total', dataIndex: 'totalNetto', key: 'totalNetto' },
   ];
 
+  // Submit final payload
   const handleFinalSubmit = async () => {
     try {
       const values = await form.validateFields();
       const payload = {
         id_kapal: values.kapal,
         id_gudang: values.namaGudang,
-        metode_kapal: `${values.armadaType}-${values.armadaDetail}`,
+        metode_kapal: `${values.armadaType} - ${values.armadaDetail}`,
         grp: values.grp || false,
         tanggal_terima: values.tanggal.format('YYYY-MM-DD'),
         items: {},
-        stok_ikan: {}
+        stok_ikan: {},
       };
 
       selectedFish.forEach(fish => {
-        const totalNetto = (fish.pallets || []).reduce((sum, p) => sum + (p.netto || 0), 0);
-        payload.items[fish.id] = [totalNetto, fish.susut || 0];
-        payload.stok_ikan[fish.id] = (fish.pallets || []).map(p => [p.palletId, p.netto, p.freezerId]);
+        const totalNetto = fish.pallets.reduce((sum, p) => sum + (p.netto || 0), 0);
+        payload.items[fish.id] = [totalNetto, fish.susut];
+        payload.stok_ikan[fish.id] = fish.pallets.map(p => [p.palletId, p.netto, p.freezerId]);
       });
 
-      await axios.post(`${config.API_BASE_URL}/penerimaan_barang`, payload, authHeader);
+      await axios.post(
+        `${config.API_BASE_URL}/penerimaan_barang`,
+        payload,
+        authHeader
+      );
+
       message.success('Data berhasil dikirim!');
       navigate('/purchase');
     } catch (error) {
@@ -162,29 +201,49 @@ export default function UnloadBlong() {
       <Header />
       <Content>
         <div className="container mx-auto px-6 py-12">
-          <Button icon={<ArrowLeftIcon size={16} />} onClick={() => navigate('/purchase')} className="mb-6">
+          <Button
+            icon={<ArrowLeftIcon size={16} />}
+            onClick={() => navigate('/purchase')}
+            className="mb-6"
+          >
             Kembali
           </Button>
 
           <Title level={2}>Bongkar Blong</Title>
 
           <Form form={form} layout="vertical" initialValues={{ tanggal: dayjs() }}>
-            <Form.Item name="tanggal" label="Tanggal" rules={[{ required: true, message: 'Pilih tanggal' }]}>
+            <Form.Item
+              name="tanggal"
+              label="Tanggal"
+              rules={[{ required: true, message: 'Pilih tanggal' }]}
+            >
               <DatePicker style={{ width: 240 }} />
             </Form.Item>
 
-            <Form.Item name="kapal" label="Kapal" rules={[{ required: true, message: 'Pilih kapal' }]}>
+            <Form.Item
+              name="kapal"
+              label="Kapal"
+              rules={[{ required: true, message: 'Pilih kapal' }]}
+            >
               <Select placeholder="Pilih kapal">
                 {kapalOptions.map(k => (
-                  <Option key={k.id} value={k.id}>{k.nama}</Option>
+                  <Option key={k.id} value={k.id}>
+                    {k.nama}
+                  </Option>
                 ))}
               </Select>
             </Form.Item>
 
-            <Form.Item name="namaGudang" label="Nama Gudang" rules={[{ required: true, message: 'Pilih gudang' }]}>
+            <Form.Item
+              name="namaGudang"
+              label="Nama Gudang"
+              rules={[{ required: true, message: 'Pilih gudang' }]}
+            >
               <Select placeholder="Pilih gudang">
                 {gudangOptions.map(g => (
-                  <Option key={g.id} value={g.id}>{g.nama}</Option>
+                  <Option key={g.id} value={g.id}>
+                    {g.nama}
+                  </Option>
                 ))}
               </Select>
             </Form.Item>
@@ -192,8 +251,13 @@ export default function UnloadBlong() {
             <Form.Item label="Armada Angkutan" required>
               <Row gutter={16}>
                 <Col span={12}>
-                  <Form.Item name="armadaType" noStyle rules={[{ required: true, message: 'Pilih jenis armada' }]}>
+                  <Form.Item
+                    name="armadaType"
+                    noStyle
+                    rules={[{ required: true, message: 'Pilih jenis armada' }]}
+                  >
                     <Select placeholder="Jenis armada">
+                      <Option value="Container">Container</Option>
                       <Option value="TRUK">Truk</Option>
                       <Option value="KERETA">Kereta</Option>
                       <Option value="KAPAL">Kapal Laut</Option>
@@ -201,7 +265,11 @@ export default function UnloadBlong() {
                   </Form.Item>
                 </Col>
                 <Col span={12}>
-                  <Form.Item name="armadaDetail" noStyle rules={[{ required: true, message: 'Masukkan detail armada' }]}>
+                  <Form.Item
+                    name="armadaDetail"
+                    noStyle
+                    rules={[{ required: true, message: 'Masukkan detail armada' }]}
+                  >
                     <Input placeholder="Detail armada" />
                   </Form.Item>
                 </Col>
@@ -214,25 +282,38 @@ export default function UnloadBlong() {
           </Form>
 
           <div className="mt-6">
-            <Button icon={<PlusIcon size={16} />} onClick={() => setShowFishModal(true)}>
+            <Button
+              icon={<PlusIcon size={16} />}
+              onClick={() => setShowFishModal(true)}
+            >
               Tambah Ikan
             </Button>
+
             <Row gutter={[16, 16]} className="mt-4">
               {selectedFish.map((fish, fishIdx) => (
                 <Col span={24} key={fish.id}>
                   <Card title={fish.name} className="mb-4">
-                    {(fish.pallets || []).map((pallet, palletIdx) => (
-                      <Row gutter={8} key={palletIdx} align="middle" className="mb-3">
+                    {fish.pallets.map((pallet, palletIdx) => (
+                      <Row
+                        gutter={8}
+                        key={palletIdx}
+                        align="middle"
+                        className="mb-3"
+                      >
                         <Col>
                           <Select
-                            placeholder="ID Pallet"
+                            placeholder="Nomor Pallet"
                             style={{ width: 120 }}
                             value={pallet.palletId}
-                            onChange={val => handlePalletChange(fishIdx, palletIdx, 'palletId', val)}
+                            onChange={val =>
+                              handlePalletChange(fishIdx, palletIdx, 'palletId', val)
+                            }
                           >
-                            <Option value="P1">P1</Option>
-                            <Option value="P2">P2</Option>
-                            <Option value="P3">P3</Option>
+                            {palletOptions.map(p => (
+                              <Option key={p.id} value={p.id}>
+                                {p.nomor}
+                              </Option>
+                            ))}
                           </Select>
                         </Col>
                         <Col>
@@ -240,7 +321,9 @@ export default function UnloadBlong() {
                             placeholder="Bruto"
                             style={{ width: 100 }}
                             value={pallet.bruto}
-                            onChange={val => handlePalletChange(fishIdx, palletIdx, 'bruto', val)}
+                            onChange={val =>
+                              handlePalletChange(fishIdx, palletIdx, 'bruto', val)
+                            }
                           />
                         </Col>
                         <Col>
@@ -253,19 +336,35 @@ export default function UnloadBlong() {
                         </Col>
                         <Col>
                           <Select
-                            placeholder="ID Freezer"
+                            placeholder="Freezer"
                             style={{ width: 120 }}
                             value={pallet.freezerId}
-                            onChange={val => handlePalletChange(fishIdx, palletIdx, 'freezerId', val)}
+                            onChange={val =>
+                              handlePalletChange(fishIdx, palletIdx, 'freezerId', val)
+                            }
                           >
                             {freezerOptions.map(fz => (
-                              <Option key={fz.id} value={fz.id}>{fz.nama}</Option>
+                              <Option key={fz.id} value={fz.id}>
+                                {fz.nama}
+                              </Option>
                             ))}
                           </Select>
                         </Col>
+                        <Col>
+                          <Button
+                            danger
+                            size="small"
+                            onClick={() => handleRemovePallet(fishIdx, palletIdx)} // Call remove function
+                          >
+                            Hapus
+                          </Button>
+                        </Col>
                       </Row>
                     ))}
-                    <Button icon={<PlusIcon size={14} />} onClick={() => handleAddPallet(fishIdx)}>
+                    <Button
+                      icon={<PlusIcon size={14} />}
+                      onClick={() => handleAddPallet(fishIdx)}
+                    >
                       Tambah Pallet
                     </Button>
                   </Card>
@@ -276,7 +375,12 @@ export default function UnloadBlong() {
             {summaryData.length > 0 && (
               <div className="mt-8">
                 <Title level={3}>Summary</Title>
-                <Table columns={summaryColumns} dataSource={summaryData} pagination={false} bordered />
+                <Table
+                  columns={summaryColumns}
+                  dataSource={summaryData}
+                  pagination={false}
+                  bordered
+                />
               </div>
             )}
 
@@ -301,13 +405,13 @@ export default function UnloadBlong() {
                   <Option key={f.id} value={f.id}>
                     {f.name}
                   </Option>
-                ))}
-              </Select>
-            </Modal>
-          </div>
-        </div>
-      </Content>
-      <FooterSection />
-    </Layout>
-  );
+            ))}
+          </Select>
+        </Modal>
+      </div>
+    </div>
+  </Content>
+  <FooterSection />
+</Layout>
+);
 }
