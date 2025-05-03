@@ -30,9 +30,6 @@ const { Content } = Layout;
 const { Title } = Typography;
 const { Option } = Select;
 
-// Static pallet weight lookup
-const palletWeights = { P1: 10, P2: 15, P3: 20 };
-
 export default function UnloadPallet() {
   const navigate = useNavigate();
   const [form] = Form.useForm();
@@ -43,12 +40,13 @@ export default function UnloadPallet() {
   const [kapalOptions, setKapalOptions] = useState([]);
   const [gudangOptions, setGudangOptions] = useState([]);
   const [freezerOptions, setFreezerOptions] = useState([]);
+  const [palletOptions, setPalletOptions] = useState([]);
 
   // Selected fish & pallets
   const [showFishModal, setShowFishModal] = useState(false);
   const [selectedFish, setSelectedFish] = useState([]);
 
-  // Fetch master data with Bearer token
+  // Fetch and map master data
   useEffect(() => {
     const token = sessionStorage.getItem('token');
     const headers = { Authorization: token };
@@ -58,12 +56,21 @@ export default function UnloadPallet() {
       axios.get(`${config.API_BASE_URL}/kapal`, { headers }),
       axios.get(`${config.API_BASE_URL}/gudang`, { headers }),
       axios.get(`${config.API_BASE_URL}/freezer`, { headers }),
+      axios.get(`${config.API_BASE_URL}/pallet`, { headers })
     ])
-      .then(([resIkan, resKapal, resGudang, resFreezer]) => {
-        setFishOptions(resIkan.data);
-        setKapalOptions(resKapal.data);
-        setGudangOptions(resGudang.data);
-        setFreezerOptions(resFreezer.data);
+      .then(([resIkan, resKapal, resGudang, resFreezer, resPallet]) => {
+        // Map API fields to { id, name }
+        const mappedFish = resIkan.data.data.map(i => ({ id: i.id_ikan, name: i.nama_ikan }));
+        const mappedKapal = resKapal.data.data.map(k => ({ id: k.id_kapal, name: k.nama_kapal }));
+        const mappedGudang = resGudang.data.data.map(g => ({ id: g.id_gudang, name: g.nama_gudang }));
+        const mappedFreezer = resFreezer.data.data.map(f => ({ id: f.id_freezer, name: f.nama_freezer }));
+        const mappedPallet = resPallet.data.data.map(p => ({ id: p.id_pallet, name: p.kode_pallet, weight: p.berat_pallet || 0 }));
+
+        setFishOptions(mappedFish);
+        setKapalOptions(mappedKapal);
+        setGudangOptions(mappedGudang);
+        setFreezerOptions(mappedFreezer);
+        setPalletOptions(mappedPallet);
       })
       .catch(err => {
         console.error(err);
@@ -85,7 +92,7 @@ export default function UnloadPallet() {
     setShowFishModal(false);
   };
 
-  // Add empty pallet entry under a fish
+  // Add empty pallet entry
   const handleAddPallet = fishIdx => {
     setSelectedFish(prev => {
       const copy = [...prev];
@@ -94,22 +101,25 @@ export default function UnloadPallet() {
     });
   };
 
-  // Update pallet value and recalc netto
+  // Update pallet and recalc netto
   const handlePalletChange = (fishIdx, palletIdx, field, value) => {
     setSelectedFish(prev => {
       const copy = [...prev];
       const entry = copy[fishIdx].pallets[palletIdx];
       entry[field] = value;
+
       if (['bruto', 'palletId'].includes(field)) {
         const bruto = entry.bruto;
-        const weight = entry.palletId ? palletWeights[entry.palletId] || 0 : 0;
+        const selected = palletOptions.find(p => p.id === entry.palletId);
+        const weight = selected ? selected.weight : 0;
         entry.netto = typeof bruto === 'number' ? bruto - weight : null;
       }
+
       return copy;
     });
   };
 
-  // Prepare summary table data
+  // Prepare summary
   const summaryData = selectedFish.map(fish => {
     const totalBruto = fish.pallets.reduce((sum, p) => sum + (p.bruto || 0), 0);
     const totalNetto = fish.pallets.reduce((sum, p) => sum + (p.netto || 0), 0);
@@ -124,7 +134,8 @@ export default function UnloadPallet() {
     { title: 'Netto Total', dataIndex: 'totalNetto', key: 'totalNetto' },
   ];
 
-  // Final submit payload with Axios + FormData
+  // Submit
+  // Submit to /penerimaan_barang with JSON payload
   const handleFinalSubmit = async () => {
     const values = form.getFieldsValue();
     const items = {};
@@ -137,22 +148,23 @@ export default function UnloadPallet() {
       stok_ikan[fish.id] = fish.pallets.map(p => [p.palletId, p.netto, p.freezerId]);
     });
 
-    const formData = new FormData();
-    formData.append('id_kapal', values.kapal);
-    formData.append('id_gudang', values.namaGudang);
-    formData.append('metode_kapal', `${values.armadaType}-${values.armadaDetail}`);
-    formData.append('grp', values.grp ? '1' : '0');
-    formData.append('tanggal_terima', values.tanggal.format('YYYY-MM-DD'));
-    formData.append('items', JSON.stringify(items));
-    formData.append('stok_ikan', JSON.stringify(stok_ikan));
+    const payload = {
+      id_kapal: values.kapal,
+      id_gudang: values.namaGudang,
+      metode_kapal: `${values.armadaType}-${values.armadaDetail}`,
+      grp: values.grp,
+      tanggal_terima: values.tanggal.format('YYYY-MM-DD'),
+      items,
+      stok_ikan
+    };
 
     try {
       const token = sessionStorage.getItem('token');
-      await axios.post(`${config.API_BASE_URL}/penerimaan_barang`, formData, {
-        headers: {
-          Authorization: token,
-        },
-      });
+      await axios.post(
+        `${config.API_BASE_URL}/penerimaan_barang`,
+        payload,
+        { headers: { Authorization: token } }
+      );
 
       notification.success({ message: 'Sukses', description: 'Data berhasil disimpan.', placement: 'top' });
       navigate('/purchase');
@@ -170,6 +182,16 @@ export default function UnloadPallet() {
     );
   }
 
+  // Tambahkan fungsi ini di bagian atas (sebelum return)
+  const handleRemovePallet = (fishIdx, palletIdx) => {
+    setSelectedFish(prev => {
+      const copy = [...prev];
+      copy[fishIdx].pallets.splice(palletIdx, 1);
+      return copy;
+    });
+  };
+
+
   return (
     <Layout className="min-h-screen">
       <Header />
@@ -180,64 +202,125 @@ export default function UnloadPallet() {
           </Button>
           <Title level={2}>Bongkar Pallet</Title>
           <Form form={form} layout="vertical" initialValues={{ tanggal: dayjs() }}>
-            <Form.Item name="tanggal" label="Tanggal" rules={[{ required: true, message: 'Pilih tanggal' }]}>  
+            <Form.Item name="tanggal" label="Tanggal" rules={[{ required: true, message: 'Pilih tanggal' }]}>
               <DatePicker style={{ width: 240 }} />
             </Form.Item>
-            <Form.Item name="kapal" label="Kapal" rules={[{ required: true, message: 'Pilih kapal' }]}>  
-              <Select placeholder="Pilih kapal">{kapalOptions.map((k) => <Option key={k.id} value={k.id}>{k.name}</Option>)}</Select>
+            <Form.Item name="kapal" label="Kapal" rules={[{ required: true, message: 'Pilih kapal' }]}>
+              <Select placeholder="Pilih kapal">
+                {kapalOptions.map(k => <Option key={k.id} value={k.id}>{k.name}</Option>)}
+              </Select>
             </Form.Item>
-            <Form.Item name="namaGudang" label="Nama Gudang" rules={[{ required: true, message: 'Pilih gudang' }]}>  
-              <Select placeholder="Pilih gudang">{gudangOptions.map((g) => <Option key={g.id} value={g.id}>{g.name}</Option>)}</Select>
+            <Form.Item name="namaGudang" label="Nama Gudang" rules={[{ required: true, message: 'Pilih gudang' }]}>
+              <Select placeholder="Pilih gudang">
+                {gudangOptions.map(g => <Option key={g.id} value={g.id}>{g.name}</Option>)}
+              </Select>
             </Form.Item>
             <Form.Item label="Armada Angkutan" required>
               <Row gutter={16}>
                 <Col span={12}>
-                  <Form.Item name="armadaType" noStyle rules={[{ required: true, message: 'Pilih jenis armada' }]}>  
-                    <Select placeholder="Jenis armada"><Option value="TRUK">Truk</Option><Option value="KERETA">Kereta</Option><Option value="KAPAL">Kapal Laut</Option></Select>
+                  <Form.Item name="armadaType" noStyle rules={[{ required: true, message: 'Pilih jenis armada' }]}>
+                    <Select placeholder="Jenis armada">
+                      <Option value="TRUK">Truk</Option>
+                      <Option value="KERETA">Kereta</Option>
+                      <Option value="KAPAL">Kapal Laut</Option>
+                    </Select>
                   </Form.Item>
                 </Col>
                 <Col span={12}>
-                  <Form.Item name="armadaDetail" noStyle rules={[{ required: true, message: 'Masukkan detail armada' }]}>  
+                  <Form.Item name="armadaDetail" noStyle rules={[{ required: true, message: 'Masukkan detail armada' }]}>
                     <Input placeholder="Detail armada" />
                   </Form.Item>
                 </Col>
               </Row>
             </Form.Item>
-            <Form.Item name="grp" label="GRP" valuePropName="checked" rules={[{ required: true, message: 'Tentukan status GRP' }]}>  
+            <Form.Item name="grp" label="GRP" valuePropName="checked" rules={[{ required: true, message: 'Tentukan status GRP' }]}>
               <Switch />
             </Form.Item>
           </Form>
+
           <div className="mt-6">
             <Button icon={<PlusIcon size={16} />} onClick={() => setShowFishModal(true)}>Tambah Ikan</Button>
-            <Row gutter={[16, 16]} className="mt-4"> 
+            <Row gutter={[16, 16]} className="mt-4">
               {selectedFish.map((fish, fishIdx) => (
                 <Col span={24} key={fish.id}>
                   <Card title={fish.name} className="mb-4">
                     {fish.pallets.map((pallet, palletIdx) => (
                       <Row gutter={8} align="middle" className="mb-3" key={palletIdx}>
-                        <Col><Select placeholder="ID Pallet" style={{ width: 120 }} value={pallet.palletId} onChange={(val) => handlePalletChange(fishIdx, palletIdx, 'palletId', val)}>{Object.keys(palletWeights).map((pid) => <Option key={pid} value={pid}>{pid}</Option>)}</Select></Col>
-                        <Col><InputNumber placeholder="Bruto" style={{ width: 100 }} value={pallet.bruto} onChange={(val) => handlePalletChange(fishIdx, palletIdx, 'bruto', val)} /></Col>
-                        <Col><InputNumber placeholder="Netto" style={{ width: 100 }} value={pallet.netto} disabled /></Col>
-                        <Col><Select placeholder="Freezer" style={{ width: 120 }} value={pallet.freezerId} onChange={(val) => handlePalletChange(fishIdx, palletIdx, 'freezerId', val)}>{freezerOptions.map((f) => <Option key={f.id} value={f.id}>{f.name}</Option>)}</Select></Col>
-                        <Col><Checkbox checked={pallet.full} onChange={(e) => handlePalletChange(fishIdx, palletIdx, 'full', e.target.checked)}>Full</Checkbox></Col>
+                        <Col>
+                          <Select
+                            placeholder="Pilih Pallet"
+                            style={{ width: 120 }}
+                            value={pallet.palletId}
+                            onChange={val => handlePalletChange(fishIdx, palletIdx, 'palletId', val)}
+                          >
+                            {palletOptions.map(p => <Option key={p.id} value={p.id}>{p.name}</Option>)}
+                          </Select>
+                        </Col>
+                        <Col>
+                          <InputNumber
+                            placeholder="Bruto"
+                            style={{ width: 100 }}
+                            value={pallet.bruto}
+                            onChange={val => handlePalletChange(fishIdx, palletIdx, 'bruto', val)}
+                          />
+                        </Col>
+                        <Col>
+                          <InputNumber
+                            placeholder="Netto"
+                            style={{ width: 100 }}
+                            value={pallet.netto}
+                            disabled
+                          />
+                        </Col>
+                        <Col>
+                          <Select
+                            placeholder="Freezer"
+                            style={{ width: 120 }}
+                            value={pallet.freezerId}
+                            onChange={val => handlePalletChange(fishIdx, palletIdx, 'freezerId', val)}
+                          >
+                            {freezerOptions.map(f => <Option key={f.id} value={f.id}>{f.name}</Option>)}
+                          </Select>
+                        </Col>
+                        <Col>
+                          <Checkbox
+                            checked={pallet.full}
+                            onChange={e => handlePalletChange(fishIdx, palletIdx, 'full', e.target.checked)}
+                          >
+                            Full
+                          </Checkbox>
+                        </Col>
+                        <Col>
+                          <Button danger onClick={() => handleRemovePallet(fishIdx, palletIdx)}>
+                            Hapus
+                          </Button>
+                        </Col>
                       </Row>
+
                     ))}
                     <Button icon={<PlusIcon size={14} />} onClick={() => handleAddPallet(fishIdx)}>Tambah Pallet</Button>
                   </Card>
                 </Col>
               ))}
             </Row>
+
             {summaryData.length > 0 && (
               <div className="mt-8">
                 <Title level={3}>Summary</Title>
                 <Table columns={summaryColumns} dataSource={summaryData} pagination={false} bordered />
               </div>
             )}
+
             <div className="mt-6 text-right">
               <Button type="primary" onClick={handleFinalSubmit}>Submit</Button>
             </div>
+
             <Modal title="Pilih Ikan" visible={showFishModal} onCancel={() => setShowFishModal(false)} footer={null}>
-              <Select placeholder="Pilih ikan" style={{ width: '100%' }} onChange={handleAddFish}>{fishOptions.filter((f) => !selectedFish.some((sf) => sf.id === f.id)).map((f) => (<Option key={f.id} value={f.id}>{f.name}</Option>))}</Select>
+              <Select placeholder="Pilih ikan" style={{ width: '100%' }} onChange={handleAddFish}>
+                {fishOptions.filter(f => !selectedFish.some(sf => sf.id === f.id)).map(f => (
+                  <Option key={f.id} value={f.id}>{f.name}</Option>
+                ))}
+              </Select>
             </Modal>
           </div>
         </div>
