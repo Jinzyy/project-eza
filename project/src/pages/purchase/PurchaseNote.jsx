@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
-import { Layout, Typography, Button, Table, Modal, DatePicker, Space, Tag } from 'antd';
+import React, { useState, useEffect } from 'react';
+import { Layout, Typography, Button, Table, Modal, DatePicker, Space, Tag, message, InputNumber } from 'antd';
 import { ArrowLeftIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
+import axios from 'axios';
+import config from '../../config';
 import Header from '../../components/Header';
 import FooterSection from '../../components/FooterSection';
 import jsPDF from 'jspdf';
@@ -11,118 +13,116 @@ import autoTable from 'jspdf-autotable';
 const { Content } = Layout;
 const { Title } = Typography;
 
-// Contoh data nota penerimaan
-const penerimaanNotes = [
-  {
-    id: 'PN-001',
-    date: '2025-04-25',
-    usedInPurchaseNote: false,
-    items: [
-      { fishName: 'Ikan Tuna', weight: 100 },
-      { fishName: 'Ikan Tongkol', weight: 60 },
-    ],
-  },
-  {
-    id: 'PN-002',
-    date: '2025-04-26',
-    usedInPurchaseNote: true,
-    items: [
-      { fishName: 'Ikan Tuna', weight: 80 }, // Sama dengan PN-001
-      { fishName: 'Ikan Kakap', weight: 50 },
-    ],
-  },
-  {
-    id: 'PN-003',
-    date: '2025-04-27',
-    usedInPurchaseNote: false,
-    items: [
-      { fishName: 'Ikan Tongkol', weight: 40 }, // Sama dengan PN-001
-    ],
-  },
-];
-
 function PurchaseNote() {
   const navigate = useNavigate();
 
+  const [penerimaanNotes, setPenerimaanNotes] = useState([]);
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
   const [purchaseNotes, setPurchaseNotes] = useState([]);
   const [isNoteModalVisible, setIsNoteModalVisible] = useState(false);
   const [isDetailModalVisible, setIsDetailModalVisible] = useState(false);
   const [selectedDetail, setSelectedDetail] = useState(null);
   const [date, setDate] = useState(dayjs());
+  const [priceMap, setPriceMap] = useState({});
 
-  const selectedReceipts = penerimaanNotes.filter(note => selectedRowKeys.includes(note.id));
+  const token = sessionStorage.getItem('token');
+  const headers = { Authorization: token };
 
-  const summary = selectedReceipts.reduce((acc, note) => {
-    note.items.forEach(item => {
-      acc[item.fishName] = (acc[item.fishName] || 0) + item.weight;
-    });
+  // Fetch penerimaan barang
+  useEffect(() => {
+    axios.get(`${config.API_BASE_URL}/penerimaan_barang`, { headers })
+      .then(({ data }) => {
+        if (data.status) {
+          const notes = data.data.map(item => ({
+            key: item.nomor_penerimaan_barang,
+            id: item.id_penerimaan_barang,
+            code: item.nomor_penerimaan_barang,
+            date: item.tanggal_terima,
+            usedInPurchaseNote: item.done === 1,
+            details: item.detail_penerimaan_barang.map(detail => ({
+              key: detail.id_ikan,
+              id_ikan: detail.id_ikan,
+              fishName: detail.nama_ikan,
+              weight: detail.berat_awal,
+              shrink: detail.potong_susut,
+            })),
+          }));
+          setPenerimaanNotes(notes);
+        }
+      })
+      .catch(err => { console.error(err); message.error('Gagal mengambil data penerimaan barang'); });
+  }, []);
+
+  // Fetch nota pembelian
+  useEffect(() => {
+    axios.get(`${config.API_BASE_URL}/nota_pembelian`, { headers })
+      .then(({ data }) => {
+        if (data.status) {
+          const formatted = data.data.map(note => ({
+            key: note.id_nota,
+            id: note.id_nota,
+            date: note.tanggal_nota,
+            items: Object.entries(note.items).map(([id, harga]) => ({ key: id, id_ikan: id, harga })),
+          }));
+          setPurchaseNotes(formatted);
+        }
+      })
+      .catch(err => console.error(err));
+  }, []);
+
+  // Summary of selected receipts: map id_ikan to total weight
+  const summaryMap = selectedRowKeys.reduce((acc, key) => {
+    const note = penerimaanNotes.find(n => n.id === key);
+    if (note) {
+      note.details.forEach(d => {
+        acc[d.id_ikan] = acc[d.id_ikan] || { id_ikan: d.id_ikan, fishName: d.fishName, weight: 0 };
+        acc[d.id_ikan].weight += d.weight;
+      });
+    }
     return acc;
   }, {});
+  const summaryRows = Object.entries(summaryMap).map(([_, { id_ikan, fishName, weight }]) => ({ id_ikan, fishName, weight }));
+
+  const handlePriceChange = (value, id_ikan) => {
+    setPriceMap(prev => ({ ...prev, [id_ikan]: value }));
+  };
 
   const handleGenerateNote = () => {
-    const note = {
-      id: `NP-${Date.now()}`,
-      date: date.format('YYYY-MM-DD'),
-      items: summary,
+    if (!selectedRowKeys.length) return message.warning('Pilih minimal satu nota penerimaan');
+    // Ensure prices entered for all items
+    const missing = summaryRows.filter(r => !priceMap[r.id_ikan]);
+    if (missing.length) return message.warning('Masukkan harga untuk semua ikan');
+
+    const payload = {
+      tanggal_nota: date.format('YYYY-MM-DD'),
+      id_penerimaan_barang: selectedRowKeys,
+      'id_ikan=harga': priceMap,
     };
-    setPurchaseNotes([...purchaseNotes, note]);
-    setSelectedRowKeys([]);
+
+    axios.post(`${config.API_BASE_URL}/nota_pembelian`, payload, { headers })
+      .then(({ data }) => {
+        if (data.status) {
+          message.success('Nota pembelian berhasil dibuat');
+          // reset selection and prices
+          setSelectedRowKeys([]);
+          setPriceMap({});
+          return axios.get(`${config.API_BASE_URL}/nota_pembelian`, { headers });
+        }
+      })
+      .then(({ data }) => {
+        if (data && data.status) {
+          const formatted = data.data.map(note => ({ key: note.id_nota, id: note.id_nota, date: note.tanggal_nota }));
+          setPurchaseNotes(formatted);
+        }
+      })
+      .catch(err => { console.error(err); message.error('Gagal membuat nota pembelian'); });
   };
 
-  const handleShowDetail = (record) => {
-    setSelectedDetail(record);
-    setIsDetailModalVisible(true);
-  };
-
-  const handlePrintPDF = (note) => {
-    const doc = new jsPDF();
-
-    doc.setFontSize(16);
-    doc.text(`Nota Pembelian: ${note.id}`, 14, 20);
-    doc.text(`Tanggal: ${note.date}`, 14, 30);
-
-    const tableData = Object.entries(note.items).map(([fish, weight]) => [
-      fish,
-      `${weight} kg`
-    ]);
-
-    autoTable(doc, {
-      head: [['Nama Ikan', 'Total Berat']],
-      body: tableData,
-      startY: 40,
-    });
-
-    doc.save(`NotaPembelian-${note.id}.pdf`);
-  };
-
-  const columns = [
-    {
-      title: 'ID Nota Penerimaan',
-      dataIndex: 'id',
-      key: 'id',
-    },
-    {
-      title: 'Tanggal',
-      dataIndex: 'date',
-      key: 'date',
-    },
-    {
-      title: 'Status',
-      key: 'used',
-      render: (_, record) => (
-        <Tag color={record.usedInPurchaseNote ? 'orange' : 'green'}>
-          {record.usedInPurchaseNote ? 'Sudah Digunakan' : 'Baru'}
-        </Tag>
-      ),
-    },
-    {
-      title: 'Detail',
-      key: 'detail',
-      render: (_, record) => (
-        <Button onClick={() => handleShowDetail(record)}>Lihat</Button>
-      ),
-    },
+  // Columns for detail modal
+  const detailColumns = [
+    { title: 'Nama Ikan', dataIndex: 'fishName', key: 'fishName' },
+    { title: 'Berat Awal (kg)', dataIndex: 'weight', key: 'weight' },
+    { title: 'Potong Susut (kg)', dataIndex: 'shrink', key: 'shrink' },
   ];
 
   return (
@@ -131,114 +131,100 @@ function PurchaseNote() {
       <Content>
         <div className="container mx-auto px-6 py-12">
           <div className="flex justify-between items-center mb-6">
-            <Button 
-              icon={<ArrowLeftIcon size={16} />} 
-              onClick={() => navigate('/purchase')}
-            >
-              Kembali
-            </Button>
-            <Button type="primary" onClick={() => setIsNoteModalVisible(true)}>
-              Lihat Nota
-            </Button>
+            <Button icon={<ArrowLeftIcon size={16} />} onClick={() => navigate('/purchase')}>Kembali</Button>
+            <Button type="primary" onClick={() => setIsNoteModalVisible(true)}>Lihat Nota</Button>
           </div>
 
           <Title level={2}>Buat Nota Pembelian</Title>
-
           <Table
-            rowSelection={{
-              selectedRowKeys,
-              onChange: setSelectedRowKeys,
-              getCheckboxProps: (record) => ({
-                disabled: false,
-              }),
-            }}
-            rowKey="id"
+            rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
+            columns={[
+              { title: 'ID', dataIndex: 'code', key: 'code' },
+              { title: 'Tanggal', dataIndex: 'date', key: 'date' },
+              { title: 'Status', key: 'used', render: (_, record) => (
+                  <Tag color={record.usedInPurchaseNote ? 'orange' : 'green'}>
+                    {record.usedInPurchaseNote ? 'Sudah Digunakan' : 'Baru'}
+                  </Tag>
+                )
+              },
+              { title: 'Detail', key: 'detail', render: (_, record) => (
+                  <Button onClick={() => { setSelectedDetail(record); setIsDetailModalVisible(true); }}>Detail</Button>
+                )
+              },
+            ]}
             dataSource={penerimaanNotes}
-            columns={columns}
             pagination={false}
-            className="mt-4"
           />
 
-          {selectedReceipts.length > 0 && (
+          {selectedRowKeys.length > 0 && (
             <div className="mt-8 border-t pt-6">
               <Title level={4}>Ringkasan Nota</Title>
               <Space direction="vertical" size="middle" className="w-full">
                 <div>
                   <strong>Tanggal Nota: </strong>
-                  <DatePicker
-                    value={date}
-                    onChange={(val) => setDate(val)}
-                    className="ml-2"
-                  />
+                  <DatePicker value={date} onChange={setDate} className="ml-2" />
                 </div>
-                <div>
-                  <strong>Rincian Ikan:</strong>
-                  <ul className="mt-2">
-                    {Object.entries(summary).map(([fish, weight]) => (
-                      <li key={fish}>{fish}: {weight} kg</li>
-                    ))}
-                  </ul>
-                </div>
-                <Button type="primary" onClick={handleGenerateNote}>
-                  Simpan Nota
-                </Button>
+                <Table
+                  columns={[
+                    { title: 'ID Ikan', dataIndex: 'id_ikan', key: 'id_ikan' },
+                    { title: 'Nama Ikan', dataIndex: 'fishName', key: 'fishName' },
+                    { title: 'Total Berat (kg)', dataIndex: 'weight', key: 'weight' },
+                    { title: 'Harga', dataIndex: 'id_ikan', key: 'harga', render: (_, row) => (
+                        <InputNumber
+                          min={0} step={1000}
+                          value={priceMap[row.id_ikan]}
+                          onChange={value => handlePriceChange(value, row.id_ikan)}
+                          placeholder="Harga"
+                          style={{ width: 120 }}
+                        />
+                      )
+                    },
+                  ]}
+                  dataSource={summaryRows}
+                  pagination={false}
+                  size="small"
+                />
+                <Button type="primary" onClick={handleGenerateNote}>Simpan Nota</Button>
               </Space>
             </div>
           )}
 
-          {/* Modal Daftar Nota */}
+          {/* Modal Daftar Nota Pembelian */}
           <Modal
             title="Daftar Nota Pembelian"
             open={isNoteModalVisible}
             onCancel={() => setIsNoteModalVisible(false)}
             footer={null}
+            width={600}
           >
-            {purchaseNotes.length === 0 ? (
-              <p>Belum ada nota yang dibuat.</p>
-            ) : (
-              <ul>
-                {purchaseNotes.map(note => (
-                  <li key={note.id}>
-                    <strong>{note.id}</strong> - {note.date}
-                    <ul>
-                      {Object.entries(note.items).map(([fish, weight]) => (
-                        <li key={fish}>{fish}: {weight} kg</li>
-                      ))}
-                    </ul>
-                    <Button 
-                      type="primary" 
-                      onClick={() => handlePrintPDF(note)}
-                      className="mt-2"
-                    >
-                      Cetak PDF
-                    </Button>
-                    <hr />
-                  </li>
-                ))}
-              </ul>
-            )}
+            <Table
+              columns={[
+                { title: 'ID Nota', dataIndex: 'id', key: 'id' },
+                { title: 'Tanggal', dataIndex: 'date', key: 'date' },
+                { title: 'Detail', key: 'detail', render: (_, record) => (
+                    <Button onClick={() => { setSelectedDetail({ details: record.items, id: record.id }); setIsDetailModalVisible(true); }}>Detail</Button>
+                  )
+                },
+              ]}
+              dataSource={purchaseNotes}
+              pagination={false}
+            />
           </Modal>
 
-          {/* Modal Detail Nota Penerimaan */}
+          {/* Modal Detail Nota Penerimaan / Pembelian */}
           <Modal
-            title={`Detail Nota Penerimaan - ${selectedDetail?.id}`}
+            title={`Detail Nota - ${selectedDetail?.id}`}
             open={isDetailModalVisible}
             onCancel={() => setIsDetailModalVisible(false)}
             footer={null}
+            width={600}
           >
-            {selectedDetail ? (
-              <>
-                <p><strong>Tanggal:</strong> {selectedDetail.date}</p>
-                <p><strong>Daftar Ikan:</strong></p>
-                <ul>
-                  {selectedDetail.items.map((item, idx) => (
-                    <li key={idx}>{item.fishName}: {item.weight} kg</li>
-                  ))}
-                </ul>
-              </>
-            ) : (
-              <p>Memuat...</p>
-            )}
+            <Table
+              columns={detailColumns}
+              dataSource={selectedDetail?.details || selectedDetail?.items || []}
+              pagination={false}
+              size="small"
+            />
           </Modal>
         </div>
       </Content>
