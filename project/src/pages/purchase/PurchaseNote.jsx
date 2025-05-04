@@ -1,5 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Layout, Typography, Button, Table, Modal, DatePicker, Space, Tag, message, InputNumber } from 'antd';
+import {
+  Layout,
+  Typography,
+  Button,
+  Table,
+  Modal,
+  DatePicker,
+  Space,
+  Tag,
+  message,
+  InputNumber
+} from 'antd';
 import { ArrowLeftIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
@@ -7,15 +18,12 @@ import axios from 'axios';
 import config from '../../config';
 import Header from '../../components/Header';
 import FooterSection from '../../components/FooterSection';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 
 const { Content } = Layout;
-const { Title } = Typography;
+const { Title, Text } = Typography;
 
-function PurchaseNote() {
+export default function PurchaseNote() {
   const navigate = useNavigate();
-
   const [penerimaanNotes, setPenerimaanNotes] = useState([]);
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
   const [purchaseNotes, setPurchaseNotes] = useState([]);
@@ -24,86 +32,129 @@ function PurchaseNote() {
   const [selectedDetail, setSelectedDetail] = useState(null);
   const [date, setDate] = useState(dayjs());
   const [priceMap, setPriceMap] = useState({});
-
   const token = sessionStorage.getItem('token');
   const headers = { Authorization: token };
 
-  // Fetch penerimaan barang
   useEffect(() => {
-    axios.get(`${config.API_BASE_URL}/penerimaan_barang`, { headers })
+    axios
+      .get(`${config.API_BASE_URL}/penerimaan_barang`, { headers })
       .then(({ data }) => {
         if (data.status) {
           const notes = data.data.map(item => ({
-            key: item.nomor_penerimaan_barang,
+            key: item.id_penerimaan_barang,
             id: item.id_penerimaan_barang,
             code: item.nomor_penerimaan_barang,
             date: item.tanggal_terima,
             usedInPurchaseNote: item.done === 1,
             details: item.detail_penerimaan_barang.map(detail => ({
-              key: detail.id_ikan,
+              key: detail.id_detail_penerimaan_barang || detail.id_ikan,
               id_ikan: detail.id_ikan,
               fishName: detail.nama_ikan,
               weight: detail.berat_awal,
-              shrink: detail.potong_susut,
-            })),
+              shrink: detail.potong_susut
+            }))
           }));
           setPenerimaanNotes(notes);
         }
       })
-      .catch(err => { console.error(err); message.error('Gagal mengambil data penerimaan barang'); });
+      .catch(err => {
+        console.error(err);
+        message.error('Gagal mengambil data penerimaan barang');
+      });
   }, []);
 
-  // Fetch nota pembelian
   useEffect(() => {
-    axios.get(`${config.API_BASE_URL}/nota_pembelian`, { headers })
+    axios
+      .get(`${config.API_BASE_URL}/nota_pembelian`, { headers })
       .then(({ data }) => {
         if (data.status) {
-          const formatted = data.data.map(note => ({
-            key: note.id_nota,
-            id: note.id_nota,
-            date: note.tanggal_nota,
-            items: Object.entries(note.items).map(([id, harga]) => ({ key: id, id_ikan: id, harga })),
+          const notes = data.data.map(note => ({
+            key: note.id_nota_pembelian,
+            id: note.id_nota_pembelian,
+            nomorNota: note.nomor_nota,
+            tanggalNota: note.tanggal_nota,
+            details: note.detail_nota_pembelian.map(d => ({
+              key: d.id_detail_nota_pembelian,
+              nomorPenerimaan: d.nomor_penerimaan_barang,
+              namaKapal: d.nama_kapal,
+              namaGudang: d.nama_gudang,
+              metodeKapal: d.metode_kapal,
+              idIkan: d.id_ikan,
+              namaIkan: d.nama_ikan,
+              quantity: d.quantity,
+              jumlah: d.jumlah
+            })),
+            totalQuantity: note.total_quantity,
+            totalJumlah: note.total_jumlah
           }));
-          setPurchaseNotes(formatted);
+          setPurchaseNotes(notes);
         }
       })
       .catch(err => console.error(err));
   }, []);
 
-  // Summary of selected receipts: map id_ikan to total weight
+  // Build summary of selected penerimaan
   const summaryMap = selectedRowKeys.reduce((acc, key) => {
     const note = penerimaanNotes.find(n => n.id === key);
     if (note) {
       note.details.forEach(d => {
-        acc[d.id_ikan] = acc[d.id_ikan] || { id_ikan: d.id_ikan, fishName: d.fishName, weight: 0 };
-        acc[d.id_ikan].weight += d.weight;
+        if (!acc[d.id_ikan]) {
+          acc[d.id_ikan] = { id_ikan: d.id_ikan, fishName: d.fishName, netWeight: 0 };
+        }
+        acc[d.id_ikan].netWeight += d.weight - d.shrink;
       });
     }
     return acc;
   }, {});
-  const summaryRows = Object.entries(summaryMap).map(([_, { id_ikan, fishName, weight }]) => ({ id_ikan, fishName, weight }));
+  const summaryRows = Object.values(summaryMap).map(({ id_ikan, fishName, netWeight }) => ({
+    id_ikan,
+    fishName,
+    weight: netWeight
+  }));
 
-  const handlePriceChange = (value, id_ikan) => {
-    setPriceMap(prev => ({ ...prev, [id_ikan]: value }));
-  };
+  const summaryColumns = [
+    { title: 'ID Ikan', dataIndex: 'id_ikan', key: 'id_ikan' },
+    { title: 'Nama Ikan', dataIndex: 'fishName', key: 'fishName' },
+    { title: 'Total Berat Bersih (kg)', dataIndex: 'weight', key: 'weight' },
+    {
+      title: 'Harga per kg (Rp)',
+      dataIndex: 'id_ikan',
+      key: 'harga',
+      render: (_, row) => (
+        <InputNumber
+          min={0}
+          step={1000}
+          value={priceMap[row.id_ikan]}
+          onChange={val => setPriceMap(prev => ({ ...prev, [row.id_ikan]: val }))}
+          placeholder="Harga"
+          style={{ width: 120 }}
+        />
+      )
+    },
+    {
+      title: 'Total Harga (Rp)',
+      key: 'totalPrice',
+      render: (_, row) => ((row.weight * (priceMap[row.id_ikan] || 0)).toLocaleString())
+    }
+  ];
 
   const handleGenerateNote = () => {
-    if (!selectedRowKeys.length) return message.warning('Pilih minimal satu nota penerimaan');
-    // Ensure prices entered for all items
-    const missing = summaryRows.filter(r => !priceMap[r.id_ikan]);
-    if (missing.length) return message.warning('Masukkan harga untuk semua ikan');
-
+    if (selectedRowKeys.length === 0) {
+      return message.warning('Pilih minimal satu nota penerimaan');
+    }
+    if (summaryRows.some(r => !priceMap[r.id_ikan])) {
+      return message.warning('Masukkan harga untuk semua ikan');
+    }
     const payload = {
       tanggal_nota: date.format('YYYY-MM-DD'),
       id_penerimaan_barang: selectedRowKeys,
-      'id_ikan=harga': priceMap,
+      'id_ikan=harga': priceMap
     };
-
-    axios.post(`${config.API_BASE_URL}/nota_pembelian`, payload, { headers })
+    axios
+      .post(`${config.API_BASE_URL}/nota_pembelian`, payload, { headers })
       .then(({ data }) => {
         if (data.status) {
           message.success('Nota pembelian berhasil dibuat');
-          // reset selection and prices
           setSelectedRowKeys([]);
           setPriceMap({});
           return axios.get(`${config.API_BASE_URL}/nota_pembelian`, { headers });
@@ -111,19 +162,49 @@ function PurchaseNote() {
       })
       .then(({ data }) => {
         if (data && data.status) {
-          const formatted = data.data.map(note => ({ key: note.id_nota, id: note.id_nota, date: note.tanggal_nota }));
-          setPurchaseNotes(formatted);
+          const notes = data.data.map(note => ({
+            key: note.id_nota_pembelian,
+            id: note.id_nota_pembelian,
+            nomorNota: note.nomor_nota,
+            tanggalNota: note.tanggal_nota,
+            details: note.detail_nota_pembelian.map(d => ({
+              key: d.id_detail_nota_pembelian,
+              nomorPenerimaan: d.nomor_penerimaan_barang,
+              namaKapal: d.nama_kapal,
+              namaGudang: d.nama_gudang,
+              metodeKapal: d.metode_kapal,
+              idIkan: d.id_ikan,
+              namaIkan: d.nama_ikan,
+              quantity: d.quantity,
+              jumlah: d.jumlah
+            })),
+            totalQuantity: note.total_quantity,
+            totalJumlah: note.total_jumlah
+          }));
+          setPurchaseNotes(notes);
         }
       })
-      .catch(err => { console.error(err); message.error('Gagal membuat nota pembelian'); });
+      .catch(err => {
+        console.error(err);
+        message.error('Gagal membuat nota pembelian');
+      });
   };
 
-  // Columns for detail modal
+  const openDetail = record => {
+    setSelectedDetail(record);
+    setIsDetailModalVisible(true);
+  };
+
   const detailColumns = [
-    { title: 'Nama Ikan', dataIndex: 'fishName', key: 'fishName' },
-    { title: 'Berat Awal (kg)', dataIndex: 'weight', key: 'weight' },
-    { title: 'Potong Susut (kg)', dataIndex: 'shrink', key: 'shrink' },
+    { title: 'No Penerimaan', dataIndex: 'nomorPenerimaan', key: 'nomorPenerimaan' },
+    { title: 'Nama Kapal', dataIndex: 'namaKapal', key: 'namaKapal' },
+    { title: 'Nama Gudang', dataIndex: 'namaGudang', key: 'namaGudang' },
+    { title: 'Metode Kapal', dataIndex: 'metodeKapal', key: 'metodeKapal' },
+    { title: 'Nama Ikan', dataIndex: 'namaIkan', key: 'namaIkan' },
+    { title: 'Quantity (kg)', dataIndex: 'quantity', key: 'quantity' },
+    { title: 'Jumlah (Rp)', dataIndex: 'jumlah', key: 'jumlah', render: val => val.toLocaleString() }
   ];
+  
 
   return (
     <Layout className="min-h-screen">
@@ -131,8 +212,12 @@ function PurchaseNote() {
       <Content>
         <div className="container mx-auto px-6 py-12">
           <div className="flex justify-between items-center mb-6">
-            <Button icon={<ArrowLeftIcon size={16} />} onClick={() => navigate('/purchase')}>Kembali</Button>
-            <Button type="primary" onClick={() => setIsNoteModalVisible(true)}>Lihat Nota</Button>
+            <Button icon={<ArrowLeftIcon size={16} />} onClick={() => navigate('/purchase')}>
+              Kembali
+            </Button>
+            <Button type="primary" onClick={() => setIsNoteModalVisible(true)}>
+              Lihat Nota
+            </Button>
           </div>
 
           <Title level={2}>Buat Nota Pembelian</Title>
@@ -141,16 +226,22 @@ function PurchaseNote() {
             columns={[
               { title: 'ID', dataIndex: 'code', key: 'code' },
               { title: 'Tanggal', dataIndex: 'date', key: 'date' },
-              { title: 'Status', key: 'used', render: (_, record) => (
+              {
+                title: 'Status',
+                key: 'used',
+                render: (_, record) => (
                   <Tag color={record.usedInPurchaseNote ? 'orange' : 'green'}>
                     {record.usedInPurchaseNote ? 'Sudah Digunakan' : 'Baru'}
                   </Tag>
                 )
               },
-              { title: 'Detail', key: 'detail', render: (_, record) => (
-                  <Button onClick={() => { setSelectedDetail(record); setIsDetailModalVisible(true); }}>Detail</Button>
+              {
+                title: 'Detail',
+                key: 'detail',
+                render: (_, record) => (
+                  <Button onClick={() => openDetail(record)}>Detail</Button>
                 )
-              },
+              }
             ]}
             dataSource={penerimaanNotes}
             pagination={false}
@@ -165,65 +256,88 @@ function PurchaseNote() {
                   <DatePicker value={date} onChange={setDate} className="ml-2" />
                 </div>
                 <Table
-                  columns={[
-                    { title: 'ID Ikan', dataIndex: 'id_ikan', key: 'id_ikan' },
-                    { title: 'Nama Ikan', dataIndex: 'fishName', key: 'fishName' },
-                    { title: 'Total Berat (kg)', dataIndex: 'weight', key: 'weight' },
-                    { title: 'Harga', dataIndex: 'id_ikan', key: 'harga', render: (_, row) => (
-                        <InputNumber
-                          min={0} step={1000}
-                          value={priceMap[row.id_ikan]}
-                          onChange={value => handlePriceChange(value, row.id_ikan)}
-                          placeholder="Harga"
-                          style={{ width: 120 }}
-                        />
-                      )
-                    },
-                  ]}
+                  columns={summaryColumns}
                   dataSource={summaryRows}
                   pagination={false}
                   size="small"
+                  summary={() => {
+                    const totalWeight = summaryRows.reduce((sum, r) => sum + r.weight, 0);
+                    const totalPrice = summaryRows.reduce((sum, r) => sum + r.weight * (priceMap[r.id_ikan] || 0), 0);
+                    return (
+                      <Table.Summary.Row>
+                        <Table.Summary.Cell index={0}>Total</Table.Summary.Cell>
+                        <Table.Summary.Cell index={1} />
+                        <Table.Summary.Cell index={2}>{totalWeight}</Table.Summary.Cell>
+                        <Table.Summary.Cell index={3} />
+                        <Table.Summary.Cell index={4}>{totalPrice.toLocaleString()}</Table.Summary.Cell>
+                      </Table.Summary.Row>
+                    );
+                  }}
                 />
-                <Button type="primary" onClick={handleGenerateNote}>Simpan Nota</Button>
+                <Button type="primary" onClick={handleGenerateNote}>
+                  Simpan Nota
+                </Button>
               </Space>
             </div>
           )}
 
-          {/* Modal Daftar Nota Pembelian */}
+          {/* Daftar Nota Pembelian Modal */}
           <Modal
             title="Daftar Nota Pembelian"
-            open={isNoteModalVisible}
+            visible={isNoteModalVisible}
             onCancel={() => setIsNoteModalVisible(false)}
             footer={null}
-            width={600}
+            width={700}
           >
             <Table
               columns={[
-                { title: 'ID Nota', dataIndex: 'id', key: 'id' },
-                { title: 'Tanggal', dataIndex: 'date', key: 'date' },
-                { title: 'Detail', key: 'detail', render: (_, record) => (
-                    <Button onClick={() => { setSelectedDetail({ details: record.items, id: record.id }); setIsDetailModalVisible(true); }}>Detail</Button>
-                  )
-                },
+                { title: 'No Nota', dataIndex: 'nomorNota', key: 'nomorNota' },
+                { title: 'Tanggal', dataIndex: 'tanggalNota', key: 'tanggalNota' },
+                {
+                  title: 'Detail',
+                  key: 'detail',
+                  render: (_, record) => <Button onClick={() => openDetail(record)}>Detail</Button>
+                }
               ]}
               dataSource={purchaseNotes}
               pagination={false}
             />
           </Modal>
 
-          {/* Modal Detail Nota Penerimaan / Pembelian */}
+          {/* Detail Nota Pembelian Modal */}
           <Modal
-            title={`Detail Nota - ${selectedDetail?.id}`}
-            open={isDetailModalVisible}
+            title={`Detail Nota - ${selectedDetail?.nomorNota}`}
+            visible={isDetailModalVisible}
             onCancel={() => setIsDetailModalVisible(false)}
             footer={null}
-            width={600}
+            width={800}
           >
+            <Space direction="vertical" size="small" style={{ marginBottom: 16 }}>
+              <Text>
+                <strong>No Nota:</strong> {selectedDetail?.nomorNota}
+              </Text>
+              <Text>
+                <strong>Tanggal:</strong> {selectedDetail?.tanggalNota}
+              </Text>
+            </Space>
             <Table
               columns={detailColumns}
-              dataSource={selectedDetail?.details || selectedDetail?.items || []}
+              dataSource={selectedDetail?.details || []}
               pagination={false}
               size="small"
+              summary={() => (
+                <Table.Summary.Row>
+                  <Table.Summary.Cell index={0} colSpan={5}>
+                    Total
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={5}>
+                    {selectedDetail?.totalQuantity}
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={6}>
+                    {selectedDetail?.totalJumlah.toLocaleString()}
+                  </Table.Summary.Cell>
+                </Table.Summary.Row>
+              )}
             />
           </Modal>
         </div>
@@ -232,5 +346,3 @@ function PurchaseNote() {
     </Layout>
   );
 }
-
-export default PurchaseNote;
