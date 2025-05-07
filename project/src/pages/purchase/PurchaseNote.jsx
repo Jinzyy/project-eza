@@ -9,35 +9,44 @@ import {
   Space,
   Tag,
   message,
-  InputNumber
+  InputNumber,
+  Select
 } from 'antd';
 import { ArrowLeftIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
+import isBetween from 'dayjs/plugin/isBetween';
 import axios from 'axios';
 import config from '../../config';
 import Header from '../../components/Header';
 import FooterSection from '../../components/FooterSection';
 
+// Extend dayjs for date range filtering
+dayjs.extend(isBetween);
+
 const { Content } = Layout;
 const { Title, Text } = Typography;
+const { RangePicker } = DatePicker;
 
 export default function PurchaseNote() {
   const navigate = useNavigate();
   const [penerimaanNotes, setPenerimaanNotes] = useState([]);
-  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
   const [purchaseNotes, setPurchaseNotes] = useState([]);
+  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
   const [isNoteModalVisible, setIsNoteModalVisible] = useState(false);
   const [isDetailModalVisible, setIsDetailModalVisible] = useState(false);
   const [selectedDetail, setSelectedDetail] = useState(null);
   const [date, setDate] = useState(dayjs());
   const [priceMap, setPriceMap] = useState({});
+  const [dateRange, setDateRange] = useState([]);
+  const [grpFilter, setGrpFilter] = useState(null);
+  const [sortOrder, setSortOrder] = useState('asc');
+
   const token = sessionStorage.getItem('token');
   const headers = { Authorization: token };
 
   useEffect(() => {
-    axios
-      .get(`${config.API_BASE_URL}/penerimaan_barang`, { headers })
+    axios.get(`${config.API_BASE_URL}/penerimaan_barang`, { headers })
       .then(({ data }) => {
         if (data.status) {
           const notes = data.data.map(item => ({
@@ -45,27 +54,24 @@ export default function PurchaseNote() {
             id: item.id_penerimaan_barang,
             code: item.nomor_penerimaan_barang,
             date: item.tanggal_terima,
+            grp: item.grp,
             usedInPurchaseNote: item.done === 1,
-            details: item.detail_penerimaan_barang.map(detail => ({
-              key: detail.id_detail_penerimaan_barang || detail.id_ikan,
-              id_ikan: detail.id_ikan,
-              fishName: detail.nama_ikan,
-              weight: detail.berat_awal,
-              shrink: detail.potong_susut
+            details: item.detail_penerimaan_barang.map(d => ({
+              key: d.id_detail_penerimaan_barang,
+              id_ikan: d.id_ikan,
+              fishName: d.nama_ikan,
+              weight: d.berat_awal,
+              shrink: d.potong_susut
             }))
           }));
           setPenerimaanNotes(notes);
         }
       })
-      .catch(err => {
-        console.error(err);
-        message.error('Gagal mengambil data penerimaan barang');
-      });
+      .catch(err => message.error('Gagal mengambil data penerimaan barang'));
   }, []);
 
   useEffect(() => {
-    axios
-      .get(`${config.API_BASE_URL}/nota_pembelian`, { headers })
+    axios.get(`${config.API_BASE_URL}/nota_pembelian`, { headers })
       .then(({ data }) => {
         if (data.status) {
           const notes = data.data.map(note => ({
@@ -89,28 +95,28 @@ export default function PurchaseNote() {
           }));
           setPurchaseNotes(notes);
         }
-      })
-      .catch(err => console.error(err));
+      });
   }, []);
 
-  // Build summary of selected penerimaan
+  const filteredData = penerimaanNotes.filter(item => {
+    const d = dayjs(item.date);
+    const inRange = !dateRange.length || d.isBetween(dateRange[0].startOf('day'), dateRange[1].endOf('day'), null, '[]');
+    const matchGrp = grpFilter !== null ? item.grp === grpFilter : true;
+    return inRange && matchGrp;
+  }).sort((a, b) => sortOrder === 'asc' ? dayjs(a.date).diff(dayjs(b.date)) : dayjs(b.date).diff(dayjs(a.date)));
+
   const summaryMap = selectedRowKeys.reduce((acc, key) => {
     const note = penerimaanNotes.find(n => n.id === key);
     if (note) {
       note.details.forEach(d => {
-        if (!acc[d.id_ikan]) {
-          acc[d.id_ikan] = { id_ikan: d.id_ikan, fishName: d.fishName, netWeight: 0 };
-        }
+        if (!acc[d.id_ikan]) acc[d.id_ikan] = { id_ikan: d.id_ikan, fishName: d.fishName, netWeight: 0 };
         acc[d.id_ikan].netWeight += d.weight - d.shrink;
       });
     }
     return acc;
   }, {});
-  const summaryRows = Object.values(summaryMap).map(({ id_ikan, fishName, netWeight }) => ({
-    id_ikan,
-    fishName,
-    weight: netWeight
-  }));
+
+  const summaryRows = Object.values(summaryMap).map(({ id_ikan, fishName, netWeight }) => ({ id_ikan, fishName, weight: netWeight }));
 
   const summaryColumns = [
     { title: 'ID Ikan', dataIndex: 'id_ikan', key: 'id_ikan' },
@@ -139,19 +145,16 @@ export default function PurchaseNote() {
   ];
 
   const handleGenerateNote = () => {
-    if (selectedRowKeys.length === 0) {
-      return message.warning('Pilih minimal satu nota penerimaan');
-    }
-    if (summaryRows.some(r => !priceMap[r.id_ikan])) {
-      return message.warning('Masukkan harga untuk semua ikan');
-    }
+    if (!selectedRowKeys.length) return message.warning('Pilih minimal satu nota penerimaan');
+    if (summaryRows.some(r => !priceMap[r.id_ikan])) return message.warning('Masukkan harga untuk semua ikan');
+
     const payload = {
       tanggal_nota: date.format('YYYY-MM-DD'),
       id_penerimaan_barang: selectedRowKeys,
       'id_ikan=harga': priceMap
     };
-    axios
-      .post(`${config.API_BASE_URL}/nota_pembelian`, payload, { headers })
+
+    axios.post(`${config.API_BASE_URL}/nota_pembelian`, payload, { headers })
       .then(({ data }) => {
         if (data.status) {
           message.success('Nota pembelian berhasil dibuat');
@@ -183,166 +186,130 @@ export default function PurchaseNote() {
           }));
           setPurchaseNotes(notes);
         }
-      })
-      .catch(err => {
-        console.error(err);
-        message.error('Gagal membuat nota pembelian');
       });
   };
 
-  const openDetail = record => {
-    setSelectedDetail(record);
-    setIsDetailModalVisible(true);
-  };
-
-  const detailColumns = [
-    { title: 'No Penerimaan', dataIndex: 'nomorPenerimaan', key: 'nomorPenerimaan' },
-    { title: 'Nama Kapal', dataIndex: 'namaKapal', key: 'namaKapal' },
-    { title: 'Nama Gudang', dataIndex: 'namaGudang', key: 'namaGudang' },
-    { title: 'Metode Kapal', dataIndex: 'metodeKapal', key: 'metodeKapal' },
-    { title: 'Nama Ikan', dataIndex: 'namaIkan', key: 'namaIkan' },
-    { title: 'Quantity (kg)', dataIndex: 'quantity', key: 'quantity' },
-    { title: 'Jumlah (Rp)', dataIndex: 'jumlah', key: 'jumlah', render: val => val.toLocaleString() }
-  ];
-  
-
   return (
-    <Layout className="min-h-screen">
+    <Layout>
       <Header />
-      <Content>
-        <div className="container mx-auto px-6 py-12">
-          <div className="flex justify-between items-center mb-6">
-            <Button icon={<ArrowLeftIcon size={16} />} onClick={() => navigate('/purchase')}>
-              Kembali
-            </Button>
-            <Button type="primary" onClick={() => setIsNoteModalVisible(true)}>
-              Lihat Nota
-            </Button>
-          </div>
-
-          <Title level={2}>Buat Nota Pembelian</Title>
-          <Table
-            rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
-            columns={[
-              { title: 'ID', dataIndex: 'code', key: 'code' },
-              { title: 'Tanggal', dataIndex: 'date', key: 'date' },
-              {
-                title: 'Status',
-                key: 'used',
-                render: (_, record) => (
-                  <Tag color={record.usedInPurchaseNote ? 'orange' : 'green'}>
-                    {record.usedInPurchaseNote ? 'Sudah Digunakan' : 'Baru'}
-                  </Tag>
-                )
-              },
-              {
-                title: 'Detail',
-                key: 'detail',
-                render: (_, record) => (
-                  <Button onClick={() => openDetail(record)}>Detail</Button>
-                )
-              }
-            ]}
-            dataSource={penerimaanNotes}
-            pagination={false}
+      <Content style={{ padding: '24px' }}>
+        <Button icon={<ArrowLeftIcon />} onClick={() => navigate(-1)} style={{ marginBottom: 16 }}>
+          Kembali
+        </Button>
+  
+        <Title level={3}>Daftar Penerimaan Barang</Title>
+  
+        <Space style={{ marginBottom: 16 }}>
+          <RangePicker
+            value={dateRange}
+            onChange={setDateRange}
+            allowClear
           />
-
-          {selectedRowKeys.length > 0 && (
-            <div className="mt-8 border-t pt-6">
-              <Title level={4}>Ringkasan Nota</Title>
-              <Space direction="vertical" size="middle" className="w-full">
-                <div>
-                  <strong>Tanggal Nota: </strong>
-                  <DatePicker value={date} onChange={setDate} className="ml-2" />
-                </div>
-                <Table
-                  columns={summaryColumns}
-                  dataSource={summaryRows}
-                  pagination={false}
-                  size="small"
-                  summary={() => {
-                    const totalWeight = summaryRows.reduce((sum, r) => sum + r.weight, 0);
-                    const totalPrice = summaryRows.reduce((sum, r) => sum + r.weight * (priceMap[r.id_ikan] || 0), 0);
-                    return (
-                      <Table.Summary.Row>
-                        <Table.Summary.Cell index={0}>Total</Table.Summary.Cell>
-                        <Table.Summary.Cell index={1} />
-                        <Table.Summary.Cell index={2}>{totalWeight}</Table.Summary.Cell>
-                        <Table.Summary.Cell index={3} />
-                        <Table.Summary.Cell index={4}>{totalPrice.toLocaleString()}</Table.Summary.Cell>
-                      </Table.Summary.Row>
-                    );
-                  }}
-                />
-                <Button type="primary" onClick={handleGenerateNote}>
-                  Simpan Nota
-                </Button>
-              </Space>
-            </div>
-          )}
-
-          {/* Daftar Nota Pembelian Modal */}
-          <Modal
-            title="Daftar Nota Pembelian"
-            visible={isNoteModalVisible}
-            onCancel={() => setIsNoteModalVisible(false)}
-            footer={null}
-            width={700}
+          <Select
+            placeholder="Filter GRP"
+            allowClear
+            onChange={setGrpFilter}
+            style={{ width: 120 }}
           >
-            <Table
-              columns={[
-                { title: 'No Nota', dataIndex: 'nomorNota', key: 'nomorNota' },
-                { title: 'Tanggal', dataIndex: 'tanggalNota', key: 'tanggalNota' },
-                {
-                  title: 'Detail',
-                  key: 'detail',
-                  render: (_, record) => <Button onClick={() => openDetail(record)}>Detail</Button>
-                }
-              ]}
-              dataSource={purchaseNotes}
-              pagination={false}
-            />
-          </Modal>
-
-          {/* Detail Nota Pembelian Modal */}
-          <Modal
-            title={`Detail Nota - ${selectedDetail?.nomorNota}`}
-            visible={isDetailModalVisible}
-            onCancel={() => setIsDetailModalVisible(false)}
-            footer={null}
-            width={800}
+            <Select.Option value={1}>GRP</Select.Option>
+            <Select.Option value={0}>Non-GRP</Select.Option>
+          </Select>
+          <Select
+            value={sortOrder}
+            onChange={setSortOrder}
+            style={{ width: 160 }}
           >
-            <Space direction="vertical" size="small" style={{ marginBottom: 16 }}>
-              <Text>
-                <strong>No Nota:</strong> {selectedDetail?.nomorNota}
-              </Text>
-              <Text>
-                <strong>Tanggal:</strong> {selectedDetail?.tanggalNota}
-              </Text>
-            </Space>
-            <Table
-              columns={detailColumns}
-              dataSource={selectedDetail?.details || []}
-              pagination={false}
-              size="small"
-              summary={() => (
-                <Table.Summary.Row>
-                  <Table.Summary.Cell index={0} colSpan={5}>
-                    Total
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={5}>
-                    {selectedDetail?.totalQuantity}
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={6}>
-                    {selectedDetail?.totalJumlah.toLocaleString()}
-                  </Table.Summary.Cell>
-                </Table.Summary.Row>
-              )}
-            />
-          </Modal>
-        </div>
+            <Select.Option value="asc">Urutkan: Tanggal Naik</Select.Option>
+            <Select.Option value="desc">Urutkan: Tanggal Turun</Select.Option>
+          </Select>
+        </Space>
+  
+        <Table
+          rowSelection={{
+            selectedRowKeys,
+            onChange: setSelectedRowKeys,
+            getCheckboxProps: record => ({
+              disabled: record.usedInPurchaseNote
+            })
+          }}
+          columns={[
+            { title: 'Nomor Penerimaan', dataIndex: 'code', key: 'code' },
+            { title: 'Tanggal', dataIndex: 'date', key: 'date' },
+            {
+              title: 'Status GRP',
+              dataIndex: 'grp',
+              key: 'grp',
+              render: val => val ? <Tag color="green">GRP</Tag> : <Tag color="red">Non-GRP</Tag>
+            },
+            {
+              title: 'Sudah Digunakan',
+              dataIndex: 'usedInPurchaseNote',
+              key: 'used',
+              render: used => used ? <Tag color="blue">✓</Tag> : <Tag color="default">-</Tag>
+            }
+          ]}
+          dataSource={filteredData}
+          pagination={{ pageSize: 10 }}
+          rowKey="id"
+        />
+  
+        <Title level={4} style={{ marginTop: 24 }}>Ringkasan</Title>
+        <Table
+          dataSource={summaryRows}
+          columns={summaryColumns}
+          pagination={false}
+          rowKey="id_ikan"
+        />
+  
+        <Space direction="horizontal" style={{ marginTop: 16 }}>
+          <DatePicker value={date} onChange={setDate} />
+          <Button type="primary" onClick={handleGenerateNote}>
+            Buat Nota Pembelian
+          </Button>
+        </Space>
+  
+        <Title level={3} style={{ marginTop: 48 }}>Nota Pembelian Tersimpan</Title>
+        <Table
+          columns={[
+            { title: 'Nomor Nota', dataIndex: 'nomorNota', key: 'nomorNota' },
+            { title: 'Tanggal', dataIndex: 'tanggalNota', key: 'tanggalNota' },
+            {
+              title: 'Total Berat (kg)', dataIndex: 'totalQuantity', key: 'totalQuantity',
+              render: v => v?.toLocaleString()
+            },
+            {
+              title: 'Total Harga (Rp)', dataIndex: 'totalJumlah', key: 'totalJumlah',
+              render: v => `Rp ${v?.toLocaleString()}`
+            }
+          ]}
+          expandable={{
+            expandedRowRender: record => (
+              <Table
+                columns={[
+                  { title: 'Ikan', dataIndex: 'namaIkan', key: 'namaIkan' },
+                  { title: 'Jumlah (kg)', dataIndex: 'quantity', key: 'quantity' },
+                  {
+                    title: 'Jumlah (Rp)', dataIndex: 'jumlah', key: 'jumlah',
+                    render: v => `Rp ${v?.toLocaleString()}`
+                  },
+                  { title: 'Kapal', dataIndex: 'namaKapal', key: 'namaKapal' },
+                  { title: 'Gudang', dataIndex: 'namaGudang', key: 'namaGudang' },
+                  { title: 'Metode', dataIndex: 'metodeKapal', key: 'metodeKapal' },
+                  { title: 'Nomor Penerimaan', dataIndex: 'nomorPenerimaan', key: 'nomorPenerimaan' }
+                ]}
+                dataSource={record.details}
+                pagination={false}
+                rowKey="key"
+              />
+            )
+          }}
+          dataSource={purchaseNotes}
+          pagination={{ pageSize: 5 }}
+          rowKey="id"
+        />
       </Content>
       <FooterSection />
     </Layout>
   );
+  
 }
