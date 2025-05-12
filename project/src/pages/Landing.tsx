@@ -31,6 +31,7 @@ const Landing = () => {
               <Card
                 hoverable
                 className="h-64 flex items-center justify-center cursor-pointer hover:shadow-lg"
+                onClick={() => navigate('/sales')}
               >
                 <StoreIcon size={48} className="text-green-500 mb-4" />
                 <Title level={2}>Penjualan</Title>

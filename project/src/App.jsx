@@ -10,6 +10,10 @@ import UnloadBlong from './pages/purchase/UnloadBlong';
 import StockRecord from './pages/purchase/StockRecord';
 import GoodsReceipt from './pages/purchase/GoodsReceipt';
 import PurchaseNote from './pages/purchase/PurchaseNote';
+import Sales from './pages/Sales';
+import SalesOrder from './pages/sales/SalesOrder';
+import DeliveryOrder from './pages/sales/DeliveryOrder';
+import Invoice from './pages/sales/Invoice';
 import ProtectedRoute from './components/ProtectedRoute';
 import './App.css';
 
@@ -62,6 +66,23 @@ const AppRoutes = () => {
       <Route
         path="/purchase/purchase-note"
         element={<ProtectedRoute><PurchaseNote/></ProtectedRoute>}
+      />
+
+      <Route 
+        path="/sales" 
+        element={<ProtectedRoute><Sales /></ProtectedRoute>} 
+      />
+      <Route 
+        path="/sales/sales-order" 
+        element={<ProtectedRoute><SalesOrder /></ProtectedRoute>} 
+      />
+      <Route 
+        path="/sales/delivery-order" 
+        element={<ProtectedRoute><DeliveryOrder /></ProtectedRoute>} 
+      />
+      <Route 
+        path="/sales/invoice" 
+        element={<ProtectedRoute><Invoice /></ProtectedRoute>} 
       />
 
       <Route path="*" element={<Navigate to="/" replace />} />
