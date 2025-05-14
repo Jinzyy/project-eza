@@ -1,42 +1,52 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Layout, Typography, Button, Table, Form, Input, DatePicker, InputNumber, Space, message } from 'antd';
 import { ArrowLeftIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import Header from '../../components/Header';
 import FooterSection from '../../components/FooterSection';
 import dayjs from 'dayjs';
+import axios from 'axios';
+import config from '../../config';
 
 const { Content } = Layout;
 const { Title } = Typography;
 
-// Mock Sales Order data
-const mockSOList = [
-  { id: 1, nomor_so: 'SO-001', customer: 'PT Laut Sejahtera', tanggal_so: '2025-04-25' },
-  { id: 2, nomor_so: 'SO-002', customer: 'CV Samudra Jaya', tanggal_so: '2025-04-27' }
-];
-// Mock details include id_pallet
-const mockSODetailsMap = {
-  1: [
-    { key: '1-1', id_ikan: 1, nama_ikan: 'Kakap Merah', id_pallet: 3, pallet: 'PAL01', nettoFinal: 50.5 },
-    { key: '1-2', id_ikan: 2, nama_ikan: 'Tuna', id_pallet: 4, pallet: 'PAL02', nettoFinal: 30.0 }
-  ],
-  2: [
-    { key: '2-1', id_ikan: 3, nama_ikan: 'Gurame', id_pallet: 5, pallet: 'PAL03', nettoFinal: 40.0 }
-  ]
-};
-
 export default function DeliveryOrder() {
   const navigate = useNavigate();
+  const [form] = Form.useForm();
+  const [salesOrders, setSalesOrders] = useState([]);
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
   const [selectedSOs, setSelectedSOs] = useState([]);
-  const [isGenerating, setIsGenerating] = useState(false);
   const [details, setDetails] = useState([]);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [form] = Form.useForm();
+
+  const API_BASE_URL = config.API_BASE_URL
+
+  // Fetch sales order
+  useEffect(() => {
+    const fetchSO = async () => {
+      try {
+        const token = sessionStorage.getItem('token');
+        const res = await axios.get(`${API_BASE_URL}/sales_order`, {
+          headers: { Authorization: token }
+        });
+        if (res.data.status) {
+          setSalesOrders(res.data.data);
+        } else {
+          message.error('Gagal mengambil data Sales Order');
+        }
+      } catch (err) {
+        console.error(err);
+        message.error('Terjadi kesalahan saat mengambil data');
+      }
+    };
+    fetchSO();
+  }, []);
 
   const soColumns = [
     { title: 'Nomor SO', dataIndex: 'nomor_so', key: 'nomor_so' },
-    { title: 'Customer', dataIndex: 'customer', key: 'customer' },
+    { title: 'Customer', dataIndex: 'nama_customer', key: 'nama_customer' },
     { title: 'Tanggal SO', dataIndex: 'tanggal_so', key: 'tanggal_so' }
   ];
 
@@ -48,7 +58,37 @@ export default function DeliveryOrder() {
     }
   };
 
-  // Columns for DO details: two weight inputs
+  const handleGenerate = () => {
+    if (!selectedRowKeys.length) {
+      message.warning('Pilih minimal satu SO');
+      return;
+    }
+
+    const combined = selectedSOs.flatMap(so =>
+      so.detail_sales_order.map((item, idx) => ({
+        key: `${so.id_sales_order}-${item.id_ikan}-${idx}`,
+        id_ikan: item.id_ikan,
+        nama_ikan: item.nama_ikan,
+        pallet: `PALLET-${item.id_ikan}`, // Placeholder pallet name
+        id_pallet: item.id_ikan, // sementara samakan, sesuaikan nanti dengan real pallet
+        nettoFinal: item.berat,
+        netto_first: item.berat,
+        netto_second: item.berat,
+        so_nomor: so.nomor_so
+      }))
+    );
+
+    setDetails(combined);
+    setIsGenerating(true);
+    form.resetFields();
+  };
+
+  const handleDetailChange = (key, field, value) => {
+    setDetails(prev =>
+      prev.map(row => (row.key === key ? { ...row, [field]: value } : row))
+    );
+  };
+
   const detailColumns = [
     { title: 'SO', dataIndex: 'so_nomor', key: 'so_nomor' },
     { title: 'Nama Ikan', dataIndex: 'nama_ikan', key: 'nama_ikan' },
@@ -56,7 +96,6 @@ export default function DeliveryOrder() {
     {
       title: 'Netto First (kg)',
       dataIndex: 'netto_first',
-      key: 'netto_first',
       render: (val, record) => (
         <InputNumber
           min={0}
@@ -69,7 +108,6 @@ export default function DeliveryOrder() {
     {
       title: 'Netto Second (kg)',
       dataIndex: 'netto_second',
-      key: 'netto_second',
       render: (val, record) => (
         <InputNumber
           min={0}
@@ -81,33 +119,11 @@ export default function DeliveryOrder() {
     }
   ];
 
-  const handleGenerate = () => {
-    if (!selectedRowKeys.length) {
-      message.warning('Pilih minimal satu SO');
-      return;
-    }
-    const combined = selectedRowKeys.flatMap(id => 
-      mockSODetailsMap[id].map(item => ({
-        ...item,
-        so_nomor: mockSOList.find(so => so.id === id).nomor_so,
-        netto_first: item.nettoFinal,
-        netto_second: item.nettoFinal
-      }))
-    );
-    setDetails(combined);
-    setIsGenerating(true);
-    form.resetFields();
-  };
-
-  const handleDetailChange = (key, field, value) => {
-    setDetails(prev => prev.map(row => row.key === key ? { ...row, [field]: value } : row));
-  };
-
-  const onFinish = values => {
+  const onFinish = async values => {
     const payload = {
       delivery_order: {
-        id_sales_order: selectedRowKeys,
-        tanggal_do: values.tanggal_do.format('YYYY-MM-DD'),
+        id_sales_order: selectedSOs[0].id_sales_order, // Asumsi hanya satu SO dipilih
+        tanggal_do: dayjs().format('YYYY-MM-DD'),
         nomor_kendaraan: values.kendaraan,
         catatan: values.catatan_do || ''
       },
@@ -116,16 +132,28 @@ export default function DeliveryOrder() {
         netto_first: d.netto_first,
         netto_second: d.netto_second
       })),
-      detail_pallet: details.map(d => d.id_pallet),
+      detail_pallet: [...new Set(details.map(d => d.id_pallet))],
       update_stok: details.map(d => ({
         id_pallet: d.id_pallet,
         id_ikan: d.id_ikan,
         netto_second: d.netto_second
       }))
     };
-    console.log('DO Payload:', payload);
-    message.success('Payload DO siap disimpan!');
-    navigate('/sales');
+
+    try {
+      setLoading(true);
+      const token = sessionStorage.getItem('token');
+      await axios.post(`${API_BASE_URL}/delivery_order`, payload, {
+        headers: { Authorization: token }
+      });
+      message.success('Delivery Order berhasil disimpan!');
+      navigate('/sales');
+    } catch (err) {
+      console.error(err);
+      message.error('Gagal menyimpan Delivery Order');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -146,13 +174,13 @@ export default function DeliveryOrder() {
             <>
               <Table
                 rowSelection={rowSelection}
-                dataSource={mockSOList}
+                dataSource={salesOrders}
                 columns={soColumns}
-                rowKey="id"
+                rowKey="id_sales_order"
                 pagination={false}
               />
               <Button type="primary" onClick={handleGenerate} disabled={!selectedRowKeys.length} className="mt-4">
-                Generate DO untuk {selectedRowKeys.length} SO
+                Generate DO
               </Button>
             </>
           ) : (
@@ -160,7 +188,7 @@ export default function DeliveryOrder() {
               form={form}
               layout="vertical"
               onFinish={onFinish}
-              initialValues={{ tanggal_do: dayjs(), kendaraan: '', catatan_do: '' }}
+              initialValues={{ kendaraan: '', catatan_do: '' }}
               className="mt-6"
             >
               <Form.Item label="SO Terpilih">
@@ -168,10 +196,7 @@ export default function DeliveryOrder() {
               </Form.Item>
 
               <Space wrap>
-                <Form.Item name="tanggal_do" label="Tanggal DO" rules={[{ required: true }]}>  
-                  <DatePicker />
-                </Form.Item>
-                <Form.Item name="kendaraan" label="Nomor Kendaraan" rules={[{ required: true }]}>  
+                <Form.Item name="kendaraan" label="Nomor Kendaraan" rules={[{ required: true }]}>
                   <Input placeholder="Plat nomor kendaraan" />
                 </Form.Item>
                 <Form.Item name="catatan_do" label="Catatan DO">
