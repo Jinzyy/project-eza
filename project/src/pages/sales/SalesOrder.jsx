@@ -32,12 +32,8 @@ export default function SalesOrder() {
   const [loading, setLoading] = useState(false);
   const [customers, setCustomers] = useState([]);
   const [ikanList, setIkanList] = useState([]);
-  const [palletList, setPalletList] = useState([]);
-  const [stokGroups, setStokGroups] = useState([]);  // grouped by ikan
   const [customersLoaded, setCustomersLoaded] = useState(false);
   const [ikanLoaded, setIkanLoaded] = useState(false);
-  const [palletLoaded, setPalletLoaded] = useState(false);
-  const [stokLoaded, setStokLoaded] = useState(false);
 
   const token = sessionStorage.getItem('token');
 
@@ -81,46 +77,6 @@ export default function SalesOrder() {
     if (token) fetchIkan();
   }, [token]);
 
-  // Fetch Pallet
-  useEffect(() => {
-    const fetchPallet = async () => {
-      try {
-        const res = await fetch(`${config.API_BASE_URL}/pallet`, { headers: { Authorization: token } });
-        if (!res.ok) {
-          message.error(`Gagal ambil pallet: ${res.status}`);
-          return;
-        }
-        const json = await res.json();
-        if (json.status) setPalletList(json.data);
-      } catch {
-        message.error('Kesalahan jaringan saat ambil pallet');
-      } finally {
-        setPalletLoaded(true);
-      }
-    };
-    if (token) fetchPallet();
-  }, [token]);
-
-  // Fetch Stok Ikan grouped by ikan (all)
-  useEffect(() => {
-    const fetchStokGroups = async () => {
-      try {
-        const res = await fetch(`${config.API_BASE_URL}/stok_ikan?params=all`, { headers: { Authorization: token } });
-        if (!res.ok) {
-          message.error(`Gagal ambil stok ikan: ${res.status}`);
-          return;
-        }
-        const json = await res.json();
-        if (json.status) setStokGroups(json.data);
-      } catch {
-        message.error('Kesalahan jaringan saat ambil stok ikan');
-      } finally {
-        setStokLoaded(true);
-      }
-    };
-    if (token) fetchStokGroups();
-  }, [token]);
-
   const openModal = () => setModalVisible(true);
   const closeModal = () => setModalVisible(false);
 
@@ -134,37 +90,19 @@ export default function SalesOrder() {
       key: ikan.id_ikan,
       id_ikan: ikan.id_ikan,
       nama_ikan: ikan.nama_ikan,
-      netoIkan: 0,
-      id_pallet: null,
-      beratPallet: 0,
-      beratDitimbang: 0,
-      nettoFinal: 0,
+      berat: 0,
       harga: 0,
       totalHarga: 0
     }]);
     closeModal();
-  };  // Update data baris tabel detail
+  };
+
+  // Update data baris tabel detail
   const handleRowChange = (key, field, value) => {
     setTableData(prev => prev.map(row => {
       if (row.key !== key) return row;
       const updated = { ...row, [field]: value };
-
-      if (field === 'id_pallet') {
-        // Set berat pallet
-        const pal = palletList.find(p => p.id_pallet === value);
-        updated.beratPallet = pal ? pal.berat_pallet : 0;
-        // Set netto ikan from stok data
-        const group = stokGroups.find(g => g.id_ikan === row.id_ikan);
-        const record = group?.records.find(r => r.id_pallet === value);
-        updated.netoIkan = record ? record.berat_bersih_ikan : 0;
-      }
-
-      // Calculate nettoFinal and totalHarga
-      const beratDitimbang = Number(updated.beratDitimbang) || 0;
-      const beratPallet = Number(updated.beratPallet) || 0;
-      updated.nettoFinal = Math.max(0, beratDitimbang - beratPallet);
-      updated.totalHarga = updated.nettoFinal * (Number(updated.harga) || 0);
-
+      updated.totalHarga = (Number(updated.berat) || 0) * (Number(updated.harga) || 0);
       return updated;
     }));
   };
@@ -217,8 +155,7 @@ export default function SalesOrder() {
       },
       detail_sales_order: tableData.map(r => ({
         id_ikan: r.id_ikan,
-        id_pallet: r.id_pallet,
-        berat: r.nettoFinal,
+        berat: r.berat,
         harga: r.harga
       }))
     };
@@ -230,46 +167,18 @@ export default function SalesOrder() {
   const columns = [
     { title: 'Nama Ikan', dataIndex: 'nama_ikan', key: 'nama_ikan' },
     {
-      title: 'Pallet',
-      dataIndex: 'id_pallet',
-      key: 'pallet',
-      render: (val, record) => {
-        const group = stokGroups.find(g => g.id_ikan === record.id_ikan);  
-        const available = group ? group.records.map(r => r.id_pallet) : [];
-        return (
-          <Select
-            placeholder="Pilih Pallet"
-            style={{ width: 140 }}
-            value={val}
-            onChange={value => handleRowChange(record.key, 'id_pallet', value)}
-            loading={!stokLoaded || !palletLoaded}
-            allowClear
-          >
-            {palletList
-              .filter(p => available.includes(p.id_pallet))
-              .map(p => (
-                <Option key={p.id_pallet} value={p.id_pallet}>{p.nomor_pallet}</Option>
-              ))}
-          </Select>
-        );
-      }
-    },
-    { title: 'Netto Ikan (kg)', dataIndex: 'netoIkan', key: 'netoIkan' },
-    {
-      title: 'Berat Ditimbang (kg)',
-      dataIndex: 'beratDitimbang',
-      key: 'beratDitimbang',
+      title: 'Berat (kg)',
+      dataIndex: 'berat',
+      key: 'berat',
       render: (val, record) => (
         <InputNumber
           min={0}
           value={val}
-          onChange={value => handleRowChange(record.key, 'beratDitimbang', value)}
+          onChange={value => handleRowChange(record.key, 'berat', value)}
           style={{ width: '100%' }}
         />
       )
     },
-    { title: 'Berat Pallet (kg)', dataIndex: 'beratPallet', key: 'beratPallet' },
-    { title: 'Netto Final (kg)', dataIndex: 'nettoFinal', key: 'netoFinal' },
     {
       title: 'Harga/kg',
       dataIndex: 'harga',
@@ -305,7 +214,7 @@ export default function SalesOrder() {
           <Form layout="vertical" onFinish={onFinish} initialValues={{ spp: false, tanggal_so: dayjs() }} className="mt-6">
             <Space direction="vertical" size="large" style={{ width: '100%' }}>
               <Space wrap>
-                <Form.Item name="id_customer" label="Customer" rules={[{ required: true }]}>                
+                <Form.Item name="id_customer" label="Customer" rules={[{ required: true }]}>
                   <Select placeholder="Pilih Customer" style={{ minWidth: 200 }} loading={!customersLoaded} allowClear>
                     {customers.map(c => <Option key={c.id_customer} value={c.id_customer}>{c.nama_customer}</Option>)}
                   </Select>
@@ -316,28 +225,27 @@ export default function SalesOrder() {
 
               <Form.Item name="catatan" label="Catatan"><Input.TextArea rows={3} placeholder="Catatan tambahan" /></Form.Item>
 
-              <Button type="dashed" block onClick={openModal} disabled={!ikanLoaded || !stokLoaded}>+ Tambah Ikan</Button>
+              <Button type="dashed" block onClick={openModal} disabled={!ikanLoaded}>+ Tambah Ikan</Button>
 
               <Table
-              dataSource={tableData}
-              columns={columns}
-              pagination={false}
-              rowKey="key"
-              locale={{ emptyText: 'Belum ada detail ikan' }}
-              summary={pageData => {
-                const totalNetto = pageData.reduce((sum, row) => sum + (row.nettoFinal || 0), 0);
-                const totalHarga = pageData.reduce((sum, row) => sum + (row.totalHarga || 0), 0);
-                return (
-                  <Table.Summary.Row>
-                    <Table.Summary.Cell index={0} colSpan={5} style={{ textAlign: 'right' }}>Total</Table.Summary.Cell>
-                    <Table.Summary.Cell index={5}>{totalNetto}</Table.Summary.Cell>
-                    <Table.Summary.Cell index={6} />
-                    <Table.Summary.Cell index={7}>{totalHarga.toLocaleString()}</Table.Summary.Cell>
-                    <Table.Summary.Cell index={8} />
-                  </Table.Summary.Row>
-                );
-              }}
-            />
+                dataSource={tableData}
+                columns={columns}
+                pagination={false}
+                rowKey="key"
+                locale={{ emptyText: 'Belum ada detail ikan' }}
+                summary={pageData => {
+                  const totalBerat = pageData.reduce((sum, row) => sum + (row.berat || 0), 0);
+                  const totalHarga = pageData.reduce((sum, row) => sum + (row.totalHarga || 0), 0);
+                  return (
+                    <Table.Summary.Row>
+                      <Table.Summary.Cell index={0} colSpan={2} style={{ textAlign: 'right' }}>Total</Table.Summary.Cell>
+                      <Table.Summary.Cell index={2}>{totalBerat}</Table.Summary.Cell>
+                      <Table.Summary.Cell index={3}>{totalHarga.toLocaleString()}</Table.Summary.Cell>
+                      <Table.Summary.Cell index={4} />
+                    </Table.Summary.Row>
+                  );
+                }}
+              />
 
               <Form.Item>
                 <Button type="primary" htmlType="submit" loading={loading} block>Simpan Sales Order</Button>

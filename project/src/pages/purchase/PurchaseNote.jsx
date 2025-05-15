@@ -117,7 +117,8 @@ export default function PurchaseNote() {
       const inRange =
         !dateRange.length ||
         d.isBetween(dateRange[0].startOf('day'), dateRange[1].endOf('day'), null, '[]');
-      const matchGrp = grpFilter !== null ? item.grp === grpFilter : true;
+      // When grpFilter is null or undefined, show all; otherwise match exact
+      const matchGrp = grpFilter == null || item.grp === grpFilter;
       return inRange && matchGrp;
     })
     .sort((a, b) =>
@@ -299,47 +300,52 @@ export default function PurchaseNote() {
 
   return (
     <Layout>
-      <Header />
-      <Content style={{ padding: 24 }}>
-        <Button icon={<ArrowLeftIcon />} onClick={() => navigate(-1)} style={{ marginBottom: 16 }}>
-          Kembali
-        </Button>
+    <Header />
+    <Content style={{ padding: 24 }}>
+      <Button icon={<ArrowLeftIcon />} onClick={() => navigate(-1)} style={{ marginBottom: 16 }}>
+        Kembali
+      </Button>
 
-        <Title level={3}>Daftar Penerimaan Barang</Title>
-        <Space style={{ marginBottom: 16 }}>
-          <RangePicker value={dateRange} onChange={setDateRange} allowClear />
-          <Select placeholder="Filter GRP" allowClear onChange={setGrpFilter} style={{ width: 120 }}>
-            <Select.Option value={1}>GRP</Select.Option>
-            <Select.Option value={0}>Non-GRP</Select.Option>
-          </Select>
-          <Select value={sortOrder} onChange={setSortOrder} style={{ width: 160 }}>
-            <Select.Option value="asc">Urutkan: Tanggal Naik</Select.Option>
-            <Select.Option value="desc">Urutkan: Tanggal Turun</Select.Option>
-          </Select>
-        </Space>
-        <Table
-          rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
-          rowClassName={r => r.usedInPurchaseNote ? 'used-row' : ''}
-          columns={[
-            { title: 'Nomor Penerimaan', dataIndex: 'code', key: 'code' },
-            { title: 'Tanggal', dataIndex: 'date', key: 'date' },
-            {
-              title: 'Status GRP',
-              dataIndex: 'grp',
-              key: 'grp',
-              render: val => val ? <Tag color="green">GRP</Tag> : <Tag color="red">Non-GRP</Tag>
-            },
-            {
-              title: 'Sudah Digunakan',
-              dataIndex: 'usedInPurchaseNote',
-              key: 'used',
-              render: used => used ? <Tag color="blue">✓</Tag> : <Tag color="default">-</Tag>
-            }
-          ]}
-          dataSource={filteredData}
-          pagination={{ pageSize: 10 }}
-          rowKey="id"
-        />
+      <Title level={3}>Daftar Penerimaan Barang</Title>
+      <Space style={{ marginBottom: 16 }}>
+        <RangePicker value={dateRange} onChange={setDateRange} allowClear />
+        <Select
+          placeholder="Filter GRP"
+          allowClear
+          onChange={value => setGrpFilter(value ?? null)}
+          style={{ width: 120 }}
+        >
+          <Select.Option value={1}>GRP</Select.Option>
+          <Select.Option value={0}>Non-GRP</Select.Option>
+        </Select>
+        <Select value={sortOrder} onChange={setSortOrder} style={{ width: 160 }}>
+          <Select.Option value="asc">Urutkan: Tanggal Naik</Select.Option>
+          <Select.Option value="desc">Urutkan: Tanggal Turun</Select.Option>
+        </Select>
+      </Space>
+      <Table
+        rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
+        rowClassName={r => r.usedInPurchaseNote ? 'used-row' : ''}
+        columns={[
+          { title: 'Nomor Penerimaan', dataIndex: 'code', key: 'code' },
+          { title: 'Tanggal', dataIndex: 'date', key: 'date' },
+          {
+            title: 'Status GRP',
+            dataIndex: 'grp',
+            key: 'grp',
+            render: val => val ? <Tag color="green">GRP</Tag> : <Tag color="red">Non-GRP</Tag>
+          },
+          {
+            title: 'Sudah Digunakan',
+            dataIndex: 'usedInPurchaseNote',
+            key: 'used',
+            render: used => used ? <Tag color="blue">✓</Tag> : <Tag color="default">-</Tag>
+          }
+        ]}
+        dataSource={filteredData}
+        pagination={{ pageSize: 10 }}
+        rowKey="id"
+      />
 
         <Title level={4} style={{ marginTop: 24 }}>Ringkasan</Title>
         <Table dataSource={summaryRows} columns={summaryColumns} pagination={false} rowKey="id_ikan" />
@@ -378,31 +384,33 @@ export default function PurchaseNote() {
           expandable={{
             expandedRowRender: record => (
               <Table
+                dataSource={record.details}
                 columns={[
-                  { title: 'Ikan', dataIndex: 'namaIkan', key: 'namaIkan' },
+                  { title: 'Nomor Penerimaan', dataIndex: 'nomorPenerimaan', key: 'nomorPenerimaan' },
+                  { title: 'Nama Ikan', dataIndex: 'namaIkan', key: 'namaIkan' },
+                  { title: 'Kapal', dataIndex: 'namaKapal', key: 'namaKapal' },
+                  { title: 'Gudang', dataIndex: 'namaGudang', key: 'namaGudang' },
+                  { title: 'Metode Kapal', dataIndex: 'metodeKapal', key: 'metodeKapal' },
+                  { title: 'Berat (kg)', dataIndex: 'quantity', key: 'quantity' },
                   {
-                    title: 'Jumlah (kg)',
-                    dataIndex: 'quantity',
-                    key: 'quantity',
-                    render: v => v.toLocaleString()
+                    title: 'Harga (Rp)',
+                    dataIndex: 'harga',
+                    key: 'harga',
+                    render: v => `Rp ${v.toLocaleString()}`
                   },
                   {
                     title: 'Jumlah (Rp)',
                     dataIndex: 'jumlah',
                     key: 'jumlah',
                     render: v => `Rp ${v.toLocaleString()}`
-                  },
-                  { title: 'Kapal', dataIndex: 'namaKapal', key: 'namaKapal' },
-                  { title: 'Gudang', dataIndex: 'namaGudang', key: 'namaGudang' },
-                  { title: 'Metode', dataIndex: 'metodeKapal', key: 'metodeKapal' },
-                  { title: 'Nomor Penerimaan', dataIndex: 'nomorPenerimaan', key: 'nomorPenerimaan' }
+                  }
                 ]}
-                dataSource={record.details}
                 pagination={false}
                 rowKey="key"
               />
             )
           }}
+          
           dataSource={purchaseNotes}
           pagination={{ pageSize: 5 }}
           rowKey="id"

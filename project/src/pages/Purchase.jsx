@@ -29,11 +29,6 @@ function Purchase() {
       path: '/purchase/unload-blong'
     },
     {
-      title: 'Buat Pencatatan Stok',
-      icon: <ClipboardIcon size={32} className="text-green-500 mb-3" />,
-      path: '/purchase/stock-record'
-    },
-    {
       title: 'Buat Dokumen Penerimaan Barang',
       icon: <FileTextIcon size={32} className="text-purple-500 mb-3" />,
       path: '/purchase/goods-receipt'
@@ -54,7 +49,7 @@ function Purchase() {
           <Title level={2} className="mb-8">Menu Pembelian</Title>
           <Row gutter={[24, 24]}>
             {menuItems.map((item, index) => (
-              <Col xs={24} sm={12} lg={8} key={index}>
+              <Col xs={24} sm={12} key={index}>
                 <Card 
                   hoverable 
                   className="h-48 flex items-center justify-center cursor-pointer transition-all hover:shadow-lg"
