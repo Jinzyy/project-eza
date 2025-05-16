@@ -10,9 +10,9 @@ import {
   message,
   InputNumber,
   Select,
-  Modal
+  Modal,
 } from 'antd';
-import { ArrowLeftIcon } from 'lucide-react';
+import { ArrowLeftIcon, PrinterIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 import isBetween from 'dayjs/plugin/isBetween';
@@ -38,6 +38,10 @@ export default function PurchaseNote() {
   const [dateRange, setDateRange] = useState([]);
   const [grpFilter, setGrpFilter] = useState(null);
   const [sortOrder, setSortOrder] = useState('asc');
+
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [invoiceToDelete, setInvoiceToDelete] = useState(null);
+
 
   const token = sessionStorage.getItem('token');
   const headers = { Authorization: token };
@@ -229,6 +233,23 @@ export default function PurchaseNote() {
       .catch(() => message.error('Gagal membuat nota pembelian'));
   };
 
+  const handleDelete = async (id) => {
+    try {
+      const headers = {
+        Authorization: token
+      };
+  
+      await axios.delete(`${config.API_BASE_URL}/nota_pembelian/${id}`, { headers });
+      message.success('Nota Pembelian berhasil dihapus');
+  
+      // Refresh data
+      fetchPurchaseNotes(); // ganti ini dengan fungsi ambil data Anda
+    } catch (error) {
+      console.error(error);
+      message.error('Gagal menghapus Nota Pembelian');
+    }
+  };
+
   // Fungsi untuk memanggil endpoint printer dan mendownload PDF
   const printNota = (payload) => {
     message.loading({ content: 'Mempersiapkan dokumen...', key: 'print' });
@@ -297,6 +318,12 @@ export default function PurchaseNote() {
       onOk: () => printNota(payload)
     });
   };
+
+  const showDeleteModal = (invoice) => {
+    setInvoiceToDelete(invoice);
+    setDeleteModalVisible(true);
+  };
+  
 
   return (
     <Layout>
@@ -374,10 +401,15 @@ export default function PurchaseNote() {
             {
               title: 'Aksi',
               key: 'aksi',
-              render: (_, record) => (
-                <Button type="default" onClick={() => handlePrint(record)}>
-                  Cetak
-                </Button>
+              render: (_, r) => (
+                <Space>
+                  <Button icon={<PrinterIcon size={16} />} onClick={() => showPrintConfirm(r)}>
+                    Cetak PDF
+                  </Button>
+                  <Button danger onClick={() => showDeleteModal(r)}>
+                    Delete
+                  </Button>
+                </Space>
               )
             }
           ]}
@@ -416,7 +448,30 @@ export default function PurchaseNote() {
           rowKey="id"
         />
       </Content>
-      <FooterSection />
+      <Modal
+        title="Konfirmasi Hapus Invoice"
+        open={deleteModalVisible}
+        onCancel={() => setDeleteModalVisible(false)}
+        onOk={async () => {
+          try {
+            await axios.delete(`${config.API_BASE_URL}/invoice/${invoiceToDelete.id_invoice}`, {
+              headers: { Authorization: `Bearer ${sessionStorage.getItem("token")}` }
+            });
+            message.success("Invoice berhasil dihapus");
+            setInvoiceList(prev => prev.filter(inv => inv.id_invoice !== invoiceToDelete.id_invoice));
+          } catch (error) {
+            console.error("Gagal hapus invoice:", error);
+            message.error("Gagal menghapus invoice");
+          } finally {
+            setDeleteModalVisible(false);
+          }
+        }}
+        okText="Hapus"
+        okButtonProps={{ danger: true }}
+        cancelText="Batal"
+      >
+        <p>Apakah Anda yakin ingin menghapus invoice <b>{invoiceToDelete?.nomor_invoice}</b>?</p>
+      </Modal>
     </Layout>
   );
 }
