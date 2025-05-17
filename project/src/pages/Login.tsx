@@ -139,23 +139,6 @@ const Login: React.FC = () => {
               </Button>
             </Form.Item>
           </Form>
-
-          <Divider>
-            <Text type="secondary">Akun Demo</Text>
-          </Divider>
-
-          <Button
-            block
-            className="py-3 rounded-lg border-blue-600 text-blue-600 hover:bg-blue-50"
-            onClick={() => {
-              form.setFieldsValue({
-                username: 'demo',
-                password: 'password123',
-              });
-            }}
-          >
-            Gunakan Akun Demo
-          </Button>
         </Col>
       </Row>
     </div>

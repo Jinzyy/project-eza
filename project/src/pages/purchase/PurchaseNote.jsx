@@ -37,7 +37,8 @@ export default function PurchaseNote() {
   const [priceMap, setPriceMap] = useState({});
   const [dateRange, setDateRange] = useState([]);
   const [grpFilter, setGrpFilter] = useState(null);
-  const [sortOrder, setSortOrder] = useState('asc');
+  const [sortOrder, setSortOrder] = useState('desc');
+  const [doneFilter, setDoneFilter] = useState(null);
 
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [invoiceToDelete, setInvoiceToDelete] = useState(null);
@@ -47,31 +48,60 @@ export default function PurchaseNote() {
   const headers = { Authorization: token };
 
   // Fetch penerimaan barang
-  useEffect(() => {
-    axios
-      .get(`${config.API_BASE_URL}/penerimaan_barang`, { headers })
-      .then(({ data }) => {
-        if (data.status) {
-          const notes = data.data.map(item => ({
-            key: item.id_penerimaan_barang,
-            id: item.id_penerimaan_barang,
-            code: item.nomor_penerimaan_barang,
-            date: item.tanggal_terima,
-            grp: item.grp,
-            usedInPurchaseNote: item.done === 1,
-            details: item.detail_penerimaan_barang.map(d => ({
-              key: d.id_detail_penerimaan_barang,
-              id_ikan: d.id_ikan,
-              fishName: d.nama_ikan,
-              weight: d.berat_awal,
-              shrink: d.potong_susut
-            }))
-          }));
-          setPenerimaanNotes(notes);
-        }
-      })
-      .catch(() => message.error('Gagal mengambil data penerimaan barang'));
-  }, []);
+useEffect(() => {
+  const fetchPenerimaanBarang = async () => {
+    try {
+      const params = {
+        sort: sortOrder,
+      };
+
+      if (dateRange.length === 2) {
+        params.date_start = dateRange[0].format('YYYY-MM-DD');
+        params.date_end = dateRange[1].format('YYYY-MM-DD');
+      }
+
+      if (grpFilter !== null) {
+        params['pb.grp'] = grpFilter;
+      }
+
+      if (doneFilter !== null) {
+        params.done = doneFilter;
+      }
+
+      const response = await axios.get(`${config.API_BASE_URL}/penerimaan_barang`, {
+        headers,
+        params,
+      });
+
+      const { data } = response;
+
+      if (data.status && Array.isArray(data.data)) {
+        const formattedNotes = data.data.map(item => ({
+          key: item.id_penerimaan_barang,
+          id: item.id_penerimaan_barang,
+          code: item.nomor_penerimaan_barang,
+          date: item.tanggal_terima,
+          grp: item.grp,
+          usedInPurchaseNote: item.done === 1,
+          details: item.detail_penerimaan_barang?.map(detail => ({
+            key: detail.id_detail_penerimaan_barang,
+            id_ikan: detail.id_ikan,
+            fishName: detail.nama_ikan,
+            weight: detail.berat_awal,
+            shrink: detail.potong_susut
+          })) || []
+        }));
+
+        setPenerimaanNotes(formattedNotes);
+      }
+    } catch (error) {
+      console.error(error);
+      message.error('Gagal mengambil data penerimaan barang');
+    }
+  };
+
+  fetchPenerimaanBarang();
+}, [dateRange, grpFilter, sortOrder, doneFilter]);
 
   // Fetch nota pembelian and compute quantity & total
   useEffect(() => {
@@ -113,23 +143,6 @@ export default function PurchaseNote() {
       })
       .catch(() => message.error('Gagal mengambil data nota pembelian'));
   }, []);
-
-  // Filter and sort penerimaanNotes
-  const filteredData = penerimaanNotes
-    .filter(item => {
-      const d = dayjs(item.date);
-      const inRange =
-        !dateRange.length ||
-        d.isBetween(dateRange[0].startOf('day'), dateRange[1].endOf('day'), null, '[]');
-      // When grpFilter is null or undefined, show all; otherwise match exact
-      const matchGrp = grpFilter == null || item.grp === grpFilter;
-      return inRange && matchGrp;
-    })
-    .sort((a, b) =>
-      sortOrder === 'asc'
-        ? dayjs(a.date).diff(dayjs(b.date))
-        : dayjs(b.date).diff(dayjs(a.date)))
-  ;
 
   // Summarize selected penerimaan
   const summaryMap = selectedRowKeys.reduce((acc, key) => {
@@ -233,22 +246,64 @@ export default function PurchaseNote() {
       .catch(() => message.error('Gagal membuat nota pembelian'));
   };
 
-  const handleDelete = async (id) => {
+  const fetchPurchaseNotes = async () => {
     try {
-      const headers = {
-        Authorization: token
-      };
-  
-      await axios.delete(`${config.API_BASE_URL}/nota_pembelian/${id}`, { headers });
-      message.success('Nota Pembelian berhasil dihapus');
-  
-      // Refresh data
-      fetchPurchaseNotes(); // ganti ini dengan fungsi ambil data Anda
+      const { data } = await axios.get(`${config.API_BASE_URL}/nota_pembelian`, { headers });
+      if (!data.status) throw new Error('Fetch failed');
+
+      const activeNotes = data.data
+        .filter(note => note.cancelled === 0)  // filter hanya yang cancelled = 0
+        .map(note => {
+          const details = note.detail_nota_pembelian.map(d => {
+            const netWeight = d.berat_awal - d.potong_susut;
+            return {
+              key: d.id_detail_nota_pembelian,
+              nomorPenerimaan: d.nomor_penerimaan_barang,
+              namaKapal: d.nama_kapal,
+              namaGudang: d.nama_gudang,
+              metodeKapal: d.metode_kapal,
+              idIkan: d.id_ikan,
+              namaIkan: d.nama_ikan,
+              quantity: netWeight,
+              harga: d.harga,
+              jumlah: netWeight * d.harga
+            };
+          });
+
+          const totalQuantity = details.reduce((sum, d) => sum + d.quantity, 0);
+          const totalJumlah = details.reduce((sum, d) => sum + d.jumlah, 0);
+
+          return {
+            key: note.id_nota_pembelian,
+            id: note.id_nota_pembelian,
+            nomorNota: note.nomor_nota,
+            tanggalNota: note.tanggal_nota,
+            details,
+            totalQuantity,
+            totalJumlah
+          };
+        });
+
+      setPurchaseNotes(activeNotes);
     } catch (error) {
-      console.error(error);
-      message.error('Gagal menghapus Nota Pembelian');
+      message.error('Gagal mengambil data nota pembelian');
     }
   };
+
+  const handleDelete = async (id) => {
+    try {
+      const headers = { Authorization: token };
+      await axios.delete(`${config.API_BASE_URL}/nota_pembelian/${id}`, { headers });
+      message.success('Invoice berhasil dihapus');
+      fetchPurchaseNotes();
+    } catch (error) {
+      console.error('Gagal menghapus invoice:', error);
+      message.error('Gagal menghapus invoice');
+    } finally {
+      setDeleteModalVisible(false);
+    }
+  };
+
 
   // Fungsi untuk memanggil endpoint printer dan mendownload PDF
   const printNota = (payload) => {
@@ -320,6 +375,7 @@ export default function PurchaseNote() {
   };
 
   const showDeleteModal = (invoice) => {
+    console.log("Invoice untuk dihapus:", invoice); // Debug cek data
     setInvoiceToDelete(invoice);
     setDeleteModalVisible(true);
   };
@@ -346,9 +402,20 @@ export default function PurchaseNote() {
           <Select.Option value={0}>Non-GRP</Select.Option>
         </Select>
         <Select value={sortOrder} onChange={setSortOrder} style={{ width: 160 }}>
-          <Select.Option value="asc">Urutkan: Tanggal Naik</Select.Option>
-          <Select.Option value="desc">Urutkan: Tanggal Turun</Select.Option>
+          <Select.Option value="desc">Tanggal Terbaru</Select.Option>
+          <Select.Option value="asc">Tanggal Terlama</Select.Option>
         </Select>
+        <Select
+          value={doneFilter}
+          onChange={(val) => setDoneFilter(val ?? null)}
+          style={{ width: 200}}
+          allowClear
+          placeholder="Filter status selesai"
+        >
+          <Select.Option value={0}>Belum Digunakan</Select.Option>
+          <Select.Option value={1}>Sudah Digunakan</Select.Option>
+        </Select>
+
       </Space>
       <Table
         rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
@@ -369,7 +436,7 @@ export default function PurchaseNote() {
             render: used => used ? <Tag color="blue">✓</Tag> : <Tag color="default">-</Tag>
           }
         ]}
-        dataSource={filteredData}
+        dataSource={penerimaanNotes}
         pagination={{ pageSize: 10 }}
         rowKey="id"
       />
@@ -403,7 +470,7 @@ export default function PurchaseNote() {
               key: 'aksi',
               render: (_, r) => (
                 <Space>
-                  <Button icon={<PrinterIcon size={16} />} onClick={() => showPrintConfirm(r)}>
+                  <Button icon={<PrinterIcon size={16} />} onClick={() => handlePrint(r)}>
                     Cetak PDF
                   </Button>
                   <Button danger onClick={() => showDeleteModal(r)}>
@@ -444,7 +511,7 @@ export default function PurchaseNote() {
           }}
           
           dataSource={purchaseNotes}
-          pagination={{ pageSize: 5 }}
+          pagination={{ pageSize: 25 }}
           rowKey="id"
         />
       </Content>
@@ -452,26 +519,14 @@ export default function PurchaseNote() {
         title="Konfirmasi Hapus Invoice"
         open={deleteModalVisible}
         onCancel={() => setDeleteModalVisible(false)}
-        onOk={async () => {
-          try {
-            await axios.delete(`${config.API_BASE_URL}/invoice/${invoiceToDelete.id_invoice}`, {
-              headers: { Authorization: `Bearer ${sessionStorage.getItem("token")}` }
-            });
-            message.success("Invoice berhasil dihapus");
-            setInvoiceList(prev => prev.filter(inv => inv.id_invoice !== invoiceToDelete.id_invoice));
-          } catch (error) {
-            console.error("Gagal hapus invoice:", error);
-            message.error("Gagal menghapus invoice");
-          } finally {
-            setDeleteModalVisible(false);
-          }
-        }}
+        onOk={() => handleDelete(invoiceToDelete?.id)}
         okText="Hapus"
         okButtonProps={{ danger: true }}
         cancelText="Batal"
       >
         <p>Apakah Anda yakin ingin menghapus invoice <b>{invoiceToDelete?.nomor_invoice}</b>?</p>
       </Modal>
+
     </Layout>
   );
 }

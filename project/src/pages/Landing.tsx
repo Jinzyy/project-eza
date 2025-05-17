@@ -40,7 +40,6 @@ const Landing = () => {
           </Row>
         </div>
       </Content>
-      <FooterSection />
     </Layout>
   );
 };

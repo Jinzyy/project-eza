@@ -12,21 +12,19 @@ const { Title } = Typography;
 const { RangePicker } = DatePicker;
 const { Option } = Select;
 
-// helper untuk mengelompokkan ikan & total beratnya
+// Helper untuk mengelompokkan ikan & total beratnya
 const groupFishData = (items = []) => {
   const grouped = {};
   items.forEach(({ nama_ikan, berat_awal = 0, potong_susut = 0 }) => {
     const net = berat_awal - potong_susut;
     grouped[nama_ikan] = (grouped[nama_ikan] || 0) + net;
   });
-  return Object.entries(grouped).map(([jenis_ikan, total_qty]) => ({ jenis_ikan, qty: total_qty }));
+  return Object.entries(grouped).map(([jenis_ikan, qty]) => ({ jenis_ikan, qty }));
 };
 
-// helper untuk total semua berat
 const getTotalWeight = (items = []) =>
   items.reduce((sum, { berat_awal = 0, potong_susut = 0 }) => sum + (berat_awal - potong_susut), 0);
 
-// helper untuk mengelompokkan stok dan potongan
 const groupStockData = (items = []) => {
   const grouped = {};
   items.forEach(({ nama_ikan, berat_awal = 0, potong_susut = 0 }) => {
@@ -44,23 +42,37 @@ export default function GoodsReceipt() {
   const token = sessionStorage.getItem('token');
   const authHeader = { headers: { Authorization: token } };
 
-  // state
-  const [allData, setAllData] = useState([]);
-  const [filteredData, setFilteredData] = useState([]);
-  const [pagination, setPagination] = useState({ current: 1, pageSize: 10, total: 0 });
+  const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [filters, setFilters] = useState({ startDate: null, endDate: null, grp: null });
-  const [sorter, setSorter] = useState({ field: null, order: null });
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 50, total: 0 });
+  const [filters, setFilters] = useState({ startDate: null, endDate: null, grp: null, done: null });
   const [selectedItem, setSelectedItem] = useState(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
 
-  // fetch all data once
-  const fetchAll = async () => {
+  const fetchData = async (page = 1, pageSize = 50) => {
     setLoading(true);
     try {
-      const res = await axios.get(`${config.API_BASE_URL}/penerimaan_barang`, authHeader);
+      const params = {
+        page,
+        limit: pageSize,
+        ...(filters.startDate && { date_start: filters.startDate }),
+        ...(filters.endDate && { date_end: filters.endDate }),
+        ...(filters.grp !== null && { 'pb.grp': filters.grp }),
+        ...(filters.done !== null && { done: filters.done }),
+      };
+
+      const res = await axios.get(`${config.API_BASE_URL}/penerimaan_barang`, {
+        ...authHeader,
+        params,
+      });
+
       if (res.data.status) {
-        setAllData(res.data.data);
+        setData(res.data.data);
+        setPagination(prev => ({
+          ...prev,
+          current: page,
+          total: res.data.total || res.data.data.length, // fallback jika tidak ada total
+        }));
       } else {
         message.error('Format data tidak sesuai.');
       }
@@ -72,47 +84,15 @@ export default function GoodsReceipt() {
     }
   };
 
-  // apply filters, sorting, and pagination client-side
+  useEffect(() => { fetchData(); }, []);
+
   useEffect(() => {
-    let data = [...allData];
+    fetchData(pagination.current, pagination.pageSize);
+  }, [filters]);
 
-    // filter by date
-    if (filters.startDate && filters.endDate) {
-      data = data.filter(item => {
-        const d = new Date(item.tanggal_terima);
-        return d >= new Date(filters.startDate) && d <= new Date(filters.endDate);
-      });
-    }
-
-    // filter by GRP
-    if (filters.grp !== null) {
-      data = data.filter(item => item.grp === filters.grp);
-    }
-
-    // sort by tanggal if requested
-    if (sorter.field === 'tanggal_terima') {
-      data.sort((a, b) => {
-        const diff = new Date(a.tanggal_terima) - new Date(b.tanggal_terima);
-        return sorter.order === 'ascend' ? diff : -diff;
-      });
-    }
-
-    // update total count for pagination
-    const total = data.length;
-    setPagination(prev => ({ ...prev, total }));
-
-    // slice for current page
-    const startIdx = (pagination.current - 1) * pagination.pageSize;
-    const pageData = data.slice(startIdx, startIdx + pagination.pageSize);
-
-    setFilteredData(pageData);
-  }, [allData, filters, sorter, pagination.current, pagination.pageSize]);
-
-  useEffect(() => { fetchAll(); }, []);
-
-  const handleTableChange = ({ current, pageSize }, _filters, sorter) => {
-    setPagination({ current, pageSize, total: pagination.total });
-    setSorter({ field: sorter.field, order: sorter.order });
+  const handleTableChange = ({ current, pageSize }) => {
+    setPagination(prev => ({ ...prev, current, pageSize }));
+    fetchData(current, pageSize);
   };
 
   const onDateChange = (dates) => {
@@ -121,21 +101,15 @@ export default function GoodsReceipt() {
       startDate: dates ? dates[0].format('YYYY-MM-DD') : null,
       endDate: dates ? dates[1].format('YYYY-MM-DD') : null,
     }));
-    setPagination(prev => ({ ...prev, current: 1 }));
   };
 
-  const onGrpChange = (value) => {
-    // treat undefined (clear) as null
-    const grpValue = typeof value === 'undefined' ? null : value;
-    setFilters(prev => ({ ...prev, grp: grpValue }));
-    setPagination(prev => ({ ...prev, current: 1 }));
-  };
+  const onGrpChange = value => setFilters(prev => ({ ...prev, grp: value }));
+  const onDoneChange = value => setFilters(prev => ({ ...prev, done: value }));
 
   const showDetail = async (record) => {
     try {
       const res = await axios.get(`${config.API_BASE_URL}/penerimaan_barang/${record.id_penerimaan_barang}`, authHeader);
-      const data = res.data.data || res.data;
-      setSelectedItem(data);
+      setSelectedItem(res.data.data || res.data);
       setIsModalVisible(true);
     } catch (err) {
       message.error('Gagal memuat detail penerimaan');
@@ -169,6 +143,7 @@ export default function GoodsReceipt() {
             const detail_penerimaan = groupFishData(items);
             payload = { ...payloadBase, total_qty: getTotalWeight(items), detail_penerimaan };
           }
+
           const resPdf = await axios.post(
             `${config.API_BASE_URL}/${endpoint}`,
             payload,
@@ -191,24 +166,28 @@ export default function GoodsReceipt() {
   };
 
   const columns = [
-    { title: 'No', key: 'index', render: (_, __, idx) => (pagination.current - 1) * pagination.pageSize + idx + 1 },
-    { title: 'Nomor Penerimaan', dataIndex: 'nomor_penerimaan_barang', key: 'nomor_penerimaan_barang' },
-    { title: 'Tanggal', dataIndex: 'tanggal_terima', key: 'tanggal_terima', sorter: true },
+    { title: 'No', render: (_, __, idx) => (pagination.current - 1) * pagination.pageSize + idx + 1 },
+    { title: 'Nomor Penerimaan', dataIndex: 'nomor_penerimaan_barang' },
+    { title: 'Tanggal', dataIndex: 'tanggal_terima' },
     {
       title: 'GRP',
       dataIndex: 'grp',
-      key: 'grp',
-      render: val => val === 1
-        ? <Tag color="green">GRP</Tag>
-        : <Tag color="red">Non-GRP</Tag>
+      render: val => val === 1 ? <Tag color="green">GRP</Tag> : <Tag color="red">Non-GRP</Tag>
     },
-    { key: 'detail', render: (_, record) => <Button onClick={() => showDetail(record)}>Lihat Detail</Button> },
-    { key: 'actions', render: (_, record) => (
+    {
+      title: 'Status',
+      dataIndex: 'done',
+      render: val => val === 1 ? <Tag color="green">Done</Tag> : <Tag color="orange">Belum</Tag>
+    },
+    { render: (_, record) => <Button onClick={() => showDetail(record)}>Lihat Detail</Button> },
+    {
+      render: (_, record) => (
         <>
           <Button type="primary" onClick={() => handlePrint(record, 'penerimaan')} className="mr-2">Cetak Penerimaan</Button>
           <Button onClick={() => handlePrint(record, 'stock')}>Cetak Stok</Button>
         </>
-    )},
+      )
+    },
   ];
 
   return (
@@ -216,7 +195,7 @@ export default function GoodsReceipt() {
       <Header />
       <Content>
         <div className="container mx-auto px-6 py-12">
-          <Button icon={<ArrowLeftIcon size={16}/>} onClick={() => navigate('/purchase')} className="mb-4">Kembali</Button>
+          <Button icon={<ArrowLeftIcon size={16} />} onClick={() => navigate('/purchase')} className="mb-4">Kembali</Button>
           <Title level={2}>Dokumen Penerimaan Barang</Title>
           <div className="flex items-center gap-4 my-4">
             <RangePicker onChange={onDateChange} />
@@ -224,19 +203,22 @@ export default function GoodsReceipt() {
               <Option value={1}>GRP</Option>
               <Option value={0}>Non-GRP</Option>
             </Select>
+            <Select placeholder="Filter Status" allowClear onChange={onDoneChange} style={{ width: 180 }}>
+              <Option value={1}>Done</Option>
+              <Option value={0}>Belum</Option>
+            </Select>
           </div>
           {loading ? (
-            <Spin style={{ width: '100%', marginTop: 50 }}/> 
+            <Spin style={{ width: '100%', marginTop: 50 }} />
           ) : (
             <Table
-              dataSource={filteredData}
+              dataSource={data}
               columns={columns}
               rowKey="id_penerimaan_barang"
               pagination={pagination}
               onChange={handleTableChange}
             />
           )}
-
           <Modal
             title={`Detail - ${selectedItem?.nomor_penerimaan_barang}`}
             open={isModalVisible}
@@ -256,8 +238,8 @@ export default function GoodsReceipt() {
                 <Table
                   dataSource={groupFishData(selectedItem.detail_penerimaan_barang)}
                   columns={[
-                    { title: 'Jenis Ikan', dataIndex: 'jenis_ikan', key: 'jenis_ikan' },
-                    { title: 'Total Berat (kg)', dataIndex: 'qty', key: 'qty' },
+                    { title: 'Jenis Ikan', dataIndex: 'jenis_ikan' },
+                    { title: 'Total Berat (kg)', dataIndex: 'qty' },
                   ]}
                   rowKey="jenis_ikan"
                   pagination={false}
@@ -270,7 +252,6 @@ export default function GoodsReceipt() {
           </Modal>
         </div>
       </Content>
-      <FooterSection />
     </Layout>
   );
 }

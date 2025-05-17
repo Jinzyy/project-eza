@@ -65,8 +65,6 @@ function Purchase() {
           </Row>
         </div>
       </Content>
-      
-      <FooterSection />
     </Layout>
   );
 }

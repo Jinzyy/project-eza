@@ -15,7 +15,8 @@ import {
   message,
   Space,
   Input,
-  Select
+  Select,
+  Descriptions
 } from 'antd';
 import { ArrowLeftIcon, SearchIcon, PrinterIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -63,6 +64,9 @@ export default function InvoicePreview() {
 
   const [invoiceDateRange, setInvoiceDateRange] = useState([]);
   const [invoiceIpFilter, setInvoiceIpFilter] = useState(null);
+
+  const [detailModalVisible, setDetailModalVisible] = useState(false);
+  const [selectedDoDetail, setSelectedDoDetail] = useState(null);
 
   const API = config.API_BASE_URL;
 
@@ -113,13 +117,12 @@ export default function InvoicePreview() {
     return Object.values(agg);
   }, [selectedRows, priceMap]);
 
-  const total =
-    summaryData.reduce((s, r) => s + r.subtotal, 0) +
-    (customEnabled
-      ? customInvoice.reduce((s, c) => s + (c.harga || 0) * (c.netto || 0), 0)
-      : 0);
+  const total = customEnabled
+    ? customInvoice.reduce((s, c) => s + (c.harga || 0) * (c.netto || 0), 0)
+    : summaryData.reduce((s, r) => s + r.subtotal, 0);
 
   const grandTotal = total - total * ((invoiceData.diskon || 0) / 100);
+
 
   const fishList = summaryData.map(r => ({
     id_ikan: r.id_ikan,
@@ -236,6 +239,15 @@ export default function InvoicePreview() {
       dataIndex: 'tanggal_do',
       key: 'tanggal_do',
       sorter: (a,b) => dayjs(a.tanggal_do).diff(dayjs(b.tanggal_do))
+    },
+    {
+      title: 'Aksi',
+      key: 'aksi',
+      render: (_, record) => (
+        <Button onClick={() => showDetailModal(record)}>
+          Lihat Detail
+        </Button>
+      )
     }
   ];
 
@@ -286,7 +298,7 @@ export default function InvoicePreview() {
         setCustomInvoice([{ id_ikan: null, nama_ikan: '', netto: 0, harga: 0 }]);
         setCustomEnabled(false);
         setInvoiceModalVisible(false);
-        navigate('/invoice');
+        navigate('/sales/invoice');
       } else {
         message.error(res.data.message);
       }
@@ -298,6 +310,16 @@ export default function InvoicePreview() {
   const showDeleteModal = (invoice) => {
     setInvoiceToDelete(invoice);
     setDeleteModalVisible(true);
+  };
+
+    const showDetailModal = (doRecord) => {
+    setSelectedDoDetail(doRecord);
+    setDetailModalVisible(true);
+  };
+
+  const handleDetailModalClose = () => {
+    setDetailModalVisible(false);
+    setSelectedDoDetail(null);
   };
   
 
@@ -322,12 +344,58 @@ export default function InvoicePreview() {
               pagination={{ pageSize: 10 }}
               rowSelection={{
                 selectedRowKeys: selectedRows.map(r => r.id_delivery_order),
-                onChange: (_, rows) => setSelectedRows(rows)
+                onChange: (_, rows) => setSelectedRows(rows),
+                getCheckboxProps: () => ({ disabled: customEnabled })
               }}
             />
+              <Modal
+                title={`Detail Delivery Order: ${selectedDoDetail?.nomor_do || ''}`}
+                visible={detailModalVisible}
+                onCancel={handleDetailModalClose}
+                footer={null}
+                width={600}
+              >
+                {selectedDoDetail ? (
+                  <>
+                    <Descriptions bordered column={1} size="small">
+                      <Descriptions.Item label="Nomor DO">{selectedDoDetail.nomor_do}</Descriptions.Item>
+                      <Descriptions.Item label="Nomor SO">{selectedDoDetail.nomor_so}</Descriptions.Item>
+                      <Descriptions.Item label="Nama Customer">{selectedDoDetail.nama_customer}</Descriptions.Item>
+                      <Descriptions.Item label="Tanggal DO">{selectedDoDetail.tanggal_do}</Descriptions.Item>
+                      <Descriptions.Item label="Nomor Kendaraan">{selectedDoDetail.nomor_kendaraan}</Descriptions.Item>
+                      <Descriptions.Item label="Catatan">{selectedDoDetail.catatan}</Descriptions.Item>
+                      <Descriptions.Item label="Employee">{selectedDoDetail.employee_name}</Descriptions.Item>
+                    </Descriptions>
+                    <Table
+                      style={{ marginTop: 16 }}
+                      size="small"
+                      rowKey="id_detail_delivery_order"
+                      dataSource={selectedDoDetail.detail_delivery_order}
+                      pagination={false}
+                      columns={[
+                        { title: 'Nama Ikan', dataIndex: 'nama_ikan', key: 'nama_ikan' },
+                        { title: 'Kode Ikan', dataIndex: 'kode_ikan', key: 'kode_ikan' },
+                        { title: 'Netto First (kg)', dataIndex: 'netto_first', key: 'netto_first' },
+                        { title: 'Netto Second (kg)', dataIndex: 'netto_second', key: 'netto_second' }
+                      ]}
+                    />
+                  </>
+                ) : (
+                  <p>Loading...</p>
+                )}
+              </Modal>
           </Card>
           {summaryData.length > 0 && (
-            <Card title="Summary" className="mb-6">
+            <Card
+              title="Summary"
+              className="mb-6"
+              style={{
+                filter: customEnabled ? 'blur(3px)' : 'none',
+                pointerEvents: customEnabled ? 'none' : 'auto',
+                userSelect: customEnabled ? 'none' : 'auto',
+                opacity: customEnabled ? 0.6 : 1
+              }}
+            >
               <Table
                 rowKey="id_ikan"
                 dataSource={summaryData}
@@ -387,12 +455,25 @@ export default function InvoicePreview() {
             </Form.Item>
             {customEnabled && customInvoice.map((row, idx) => (
               <Row gutter={16} key={idx} className="mb-2">
-                <Col span={6}>
-                  <Form.Item label="Nama Ikan">
-                    <Input readOnly value={row.nama_ikan} />
-                    <Button icon={<SearchIcon size={16} />} onClick={() => openFishModal(idx)} disabled={!fishList.length} className="mt-1" />
-                  </Form.Item>
-                </Col>
+              <Col span={6}>
+                <Form.Item label="Nama Ikan">
+                  <Input
+                    value={row.nama_ikan}
+                    onChange={e => {
+                      const newName = e.target.value;
+                      setCustomInvoice(ci =>
+                        ci.map((r, i) => (i === idx ? { ...r, nama_ikan: newName } : r))
+                      );
+                    }}
+                  />
+                  <Button
+                    icon={<SearchIcon size={16} />}
+                    onClick={() => openFishModal(idx)}
+                    disabled={!fishList.length}
+                    className="mt-1"
+                  />
+                </Form.Item>
+              </Col>
                 <Col span={6}>
                   <Form.Item label="Netto (kg)">
                     <InputNumber className="w-full" min={0} value={row.netto} onChange={v => setCustomInvoice(ci => ci.map((r,i)=>(i===idx?{...r,netto:v}:r)))} />
@@ -477,7 +558,7 @@ export default function InvoicePreview() {
                 )
               }
             ]}
-            pagination={{ pageSize: 10 }}
+            pagination={{ pageSize: 25 }}
           />
         </Modal>
         <Modal
@@ -505,7 +586,6 @@ export default function InvoicePreview() {
           <p>Apakah Anda yakin ingin menghapus invoice <b>{invoiceToDelete?.nomor_invoice}</b>?</p>
         </Modal>
       </Content>
-      <FooterSection />
     </Layout>
   );
 }

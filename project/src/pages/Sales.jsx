@@ -58,8 +58,6 @@ function Sales() {
           </Row>
         </div>
       </Content>
-      
-      <FooterSection />
     </Layout>
   );
 }

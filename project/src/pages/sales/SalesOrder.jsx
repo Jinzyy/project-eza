@@ -12,9 +12,11 @@ import {
   Modal,
   InputNumber,
   Space,
-  message
+  message,
+  Popconfirm
 } from 'antd';
 import { ArrowLeftIcon } from 'lucide-react';
+import { DownloadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import Header from '../../components/Header';
 import FooterSection from '../../components/FooterSection';
@@ -24,6 +26,7 @@ import config from '../../config';
 const { Content } = Layout;
 const { Title } = Typography;
 const { Option } = Select;
+const { RangePicker } = DatePicker;
 
 export default function SalesOrder() {
   const navigate = useNavigate();
@@ -34,6 +37,15 @@ export default function SalesOrder() {
   const [ikanList, setIkanList] = useState([]);
   const [customersLoaded, setCustomersLoaded] = useState(false);
   const [ikanLoaded, setIkanLoaded] = useState(false);
+
+  const [salesOrders, setSalesOrders] = useState([]);
+  const [detailModalVisible, setDetailModalVisible] = useState(false);
+  const [selectedOrderDetails, setSelectedOrderDetails] = useState(null);
+
+  // Filters state
+  const [dateRange, setDateRange] = useState([null, null]);
+  const [sortOrder, setSortOrder] = useState('desc'); // 'asc' or 'desc'
+  const [filterLoading, setFilterLoading] = useState(false);
 
   const token = sessionStorage.getItem('token');
 
@@ -77,10 +89,44 @@ export default function SalesOrder() {
     if (token) fetchIkan();
   }, [token]);
 
+  // Fetch Sales Orders with filters
+  const fetchSalesOrders = async (params = {}) => {
+    setFilterLoading(true);
+    try {
+      const query = new URLSearchParams();
+      if (params.date_start) query.append('date_start', params.date_start);
+      if (params.date_end) query.append('date_end', params.date_end);
+      if (params.sort) query.append('sort', params.sort);
+
+      const url = `${config.API_BASE_URL}/sales_order${query.toString() ? '?' + query.toString() : ''}`;
+      const res = await fetch(url, {
+        headers: { Authorization: token }
+      });
+      if (!res.ok) {
+        message.error(`Gagal ambil sales order: ${res.status}`);
+        setFilterLoading(false);
+        return;
+      }
+      const json = await res.json();
+      if (json.status) setSalesOrders(json.data);
+    } catch {
+      message.error('Kesalahan jaringan saat ambil sales order');
+    } finally {
+      setFilterLoading(false);
+    }
+  };
+
+  // Initial fetch with default sort desc
+  useEffect(() => {
+    if (token) {
+      fetchSalesOrders({ sort: 'desc' });
+    }
+  }, [token]);
+
   const openModal = () => setModalVisible(true);
   const closeModal = () => setModalVisible(false);
 
-  // Tambah ikan ke tabel detail
+  // Add ikan ke tabel
   const handleAddIkan = (ikan) => {
     if (tableData.some(row => row.id_ikan === ikan.id_ikan)) {
       message.warning('Ikan sudah ditambahkan');
@@ -97,7 +143,7 @@ export default function SalesOrder() {
     closeModal();
   };
 
-  // Update data baris tabel detail
+  // Update data baris
   const handleRowChange = (key, field, value) => {
     setTableData(prev => prev.map(row => {
       if (row.key !== key) return row;
@@ -107,12 +153,12 @@ export default function SalesOrder() {
     }));
   };
 
-  // Hapus baris detail ikan
+  // Hapus baris
   const handleRemove = (key) => {
     setTableData(prev => prev.filter(row => row.key !== key));
   };
 
-  // Submit sales order ke backend
+  // Submit sales order
   const submitSalesOrder = async (payload) => {
     try {
       setLoading(true);
@@ -163,6 +209,104 @@ export default function SalesOrder() {
     if (success) navigate('/sales');
   };
 
+  // Show detail modal
+  const showDetailModal = (order) => {
+    setSelectedOrderDetails(order);
+    setDetailModalVisible(true);
+  };
+
+  const closeDetailModal = () => {
+    setDetailModalVisible(false);
+    setSelectedOrderDetails(null);
+  };
+
+  // Confirm and handle Cetak PDF
+  const confirmCetakPDF = (order) => {
+    Modal.confirm({
+      title: 'Konfirmasi Cetak PDF',
+      content: `Apakah Anda yakin ingin mencetak PDF untuk Sales Order ${order.nomor_so}?`,
+      okText: 'Ya',
+      cancelText: 'Batal',
+      onOk() {
+        handleCetakPDF(order);
+      }
+    });
+  };
+
+  // Handle Cetak PDF
+  const handleCetakPDF = async (order) => {
+    const payload = {
+      nama_customer: order.nama_customer,
+      nomor_so: order.nomor_so,
+      tanggal_so: order.tanggal_so,
+      catatan: order.catatan,
+      detail_sales_order: order.detail_sales_order.map(item => ({
+        nama_ikan: item.nama_ikan,
+        quantity: item.berat,
+        harga: item.harga,
+        total: item.berat * item.harga
+      }))
+    };
+
+    try {
+      const res = await fetch(`${config.API_BASE_URL}/sales_order_printer`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: token
+        },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        message.error(err.message || 'Gagal cetak PDF');
+        return;
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      // Trigger download
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${order.nomor_so}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      message.success('PDF berhasil diunduh');
+    } catch {
+      message.error('Terjadi kesalahan saat cetak PDF');
+    }
+  };
+
+  // Handle filter changes
+  const onDateRangeChange = (dates) => {
+    setDateRange(dates);
+  };
+
+  const onSortOrderChange = (value) => {
+    setSortOrder(value);
+  };
+
+  // Apply filters
+  const applyFilters = () => {
+    const params = {};
+    if (dateRange && dateRange[0] && dateRange[1]) {
+      params.date_start = dateRange[0].format('YYYY-MM-DD');
+      params.date_end = dateRange[1].format('YYYY-MM-DD');
+    }
+    if (sortOrder) {
+      params.sort = sortOrder;
+    }
+    fetchSalesOrders(params);
+  };
+
+  // Reset filters
+  const resetFilters = () => {
+    setDateRange([null, null]);
+    setSortOrder('desc');
+    fetchSalesOrders({ sort: 'desc' });
+  };
+
   // Kolom tabel detail ikan
   const columns = [
     { title: 'Nama Ikan', dataIndex: 'nama_ikan', key: 'nama_ikan' },
@@ -199,6 +343,23 @@ export default function SalesOrder() {
     {
       title: 'Aksi', key: 'aksi', render: (_, record) => (
         <Button danger onClick={() => handleRemove(record.key)}>Hapus</Button>
+      )
+    }
+  ];
+
+  // Columns for sales order table
+  const salesOrderColumns = [
+    { title: 'Nomor SO', dataIndex: 'nomor_so', key: 'nomor_so' },
+    { title: 'Customer', dataIndex: 'nama_customer', key: 'nama_customer' },
+    { title: 'Tanggal SO', dataIndex: 'tanggal_so', key: 'tanggal_so' },
+    {
+      title: 'Aksi',
+      key: 'aksi',
+      render: (_, record) => (
+        <Space>
+          <Button onClick={() => showDetailModal(record)}>Detail</Button>
+          <Button icon={<DownloadOutlined />} onClick={() => confirmCetakPDF(record)}>Cetak PDF</Button>
+        </Space>
       )
     }
   ];
@@ -246,13 +407,67 @@ export default function SalesOrder() {
                   );
                 }}
               />
-
               <Form.Item>
                 <Button type="primary" htmlType="submit" loading={loading} block>Simpan Sales Order</Button>
               </Form.Item>
             </Space>
           </Form>
 
+          {/* Filters for Sales Order List */}
+          <Title level={2} style={{ marginTop: 40 }}>Daftar Sales Order</Title>
+          <Space style={{ marginBottom: 16 }} wrap>
+            <RangePicker
+              value={dateRange}
+              onChange={onDateRangeChange}
+              allowClear
+              placeholder={['Tanggal Mulai', 'Tanggal Akhir']}
+            />
+            <Select value={sortOrder} onChange={onSortOrderChange} style={{ width: 150 }}>
+              <Option value="asc">Tanggal Ascending</Option>
+              <Option value="desc">Tanggal Descending</Option>
+            </Select>
+            <Button type="primary" onClick={applyFilters} loading={filterLoading}>Terapkan Filter</Button>
+            <Button onClick={resetFilters} disabled={filterLoading}>Reset Filter</Button>
+          </Space>
+
+          <Table
+            dataSource={salesOrders}
+            columns={salesOrderColumns}
+            rowKey="id_sales_order"
+            pagination={{ pageSize: 5 }}
+            loading={filterLoading}
+          />
+
+          {/* Detail Modal */}
+          <Modal
+            title={`Detail Sales Order: ${selectedOrderDetails?.nomor_so || ''}`}
+            visible={detailModalVisible}
+            onCancel={closeDetailModal}
+            footer={<Button onClick={closeDetailModal}>Tutup</Button>}
+            width={700}
+          >
+            {selectedOrderDetails && (
+              <Table
+                dataSource={selectedOrderDetails.detail_sales_order}
+                columns={[
+                  { title: 'Nama Ikan', dataIndex: 'nama_ikan', key: 'nama_ikan' },
+                  { title: 'Kode Ikan', dataIndex: 'kode_ikan', key: 'kode_ikan' },
+                  { title: 'Berat (kg)', dataIndex: 'berat', key: 'berat', render: val => Number(val).toLocaleString() },
+                  { title: 'Harga/kg', dataIndex: 'harga', key: 'harga', render: val => Number(val).toLocaleString() },
+                  {
+                    title: 'Total Harga',
+                    key: 'total',
+                    render: (_, item) => (item.berat * item.harga).toLocaleString()
+                  }
+                ]}
+                pagination={false}
+                rowKey="id_detail_sales_order"
+                size="small"
+              />
+            )}
+          </Modal>
+
+          {/* Modal for adding ikan */}
           <Modal title="Pilih Ikan" open={modalVisible} onCancel={closeModal} footer={null} width={600} destroyOnClose>
             <Table dataSource={ikanList} loading={!ikanLoaded} columns={[
               { title: 'Kode Ikan', dataIndex: 'kode_ikan', key: 'kode_ikan' },
