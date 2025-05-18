@@ -173,28 +173,53 @@ export default function InvoicePreview() {
     fetchInvoices(invoiceSortOrder);
   }, [invoiceSortOrder]);
 
-  // Refactor formatNotaPayload to compute harga and total properly
+  // Refactor formatNotaPayload to compute harga and total properly and use custom_invoice if present
+// Refactor formatNotaPayload tanpa '??'
   const formatNotaPayload = invoice => {
-    const detail_invoices = invoice.detail_invoices.map(item => {
-      const qty = item.netto_second_total || 0;
-      // Use harga from priceMap if available, else fallback to 0
-      const harga = item.records && item.records[0]?.harga != null ? item.records[0].harga : (priceMap[item.id_ikan] || 0);
-      const total = qty * harga;
-      return {
-        nama_ikan: item.nama_ikan,
-        quantity: qty,
-        harga,
-        total
-      };
-    });
-    const quantity_total = detail_invoices.reduce((sum, d) => sum + d.quantity, 0);
-    const total_dpp = detail_invoices.reduce((sum, d) => sum + d.total, 0);
-    const diskon = invoice.diskon || 0;
-    const pph = Number((total_dpp * 0.0075).toFixed(2));
-    const grand_total = Number((total_dpp - diskon - pph).toFixed(2));
+    const useCustom = Array.isArray(invoice.custom_invoices) && invoice.custom_invoices.length > 0;
+
+    // 1) build detail_invoices sesuai sumber data
+    const detail_invoices = (useCustom
+      ? invoice.custom_invoices.map(c => {
+          const qty   = c.netto_total || 0;
+          const harga = c.records[0]?.harga ?? 0;
+          return {
+            nama_ikan: c.nama_ikan,
+            quantity:  qty,
+            harga:     harga,
+            total:     qty * harga
+          };
+        })
+      : invoice.detail_invoices.map(item => {
+          const qty   = item.netto_second_total || 0;
+          const harga = item.records[0]?.harga ?? (priceMap[item.id_ikan] || 0);
+          return {
+            nama_ikan: item.nama_ikan,
+            quantity:  qty,
+            harga:     harga,
+            total:     qty * harga
+          };
+        })
+    );
+
+    // 2) aggregate
+    const quantity_total = detail_invoices.reduce((s, d) => s + d.quantity, 0);
+    const total_dpp      = detail_invoices.reduce((s, d) => s + d.total, 0);
+    const diskon         = invoice.diskon || 0;
+
+    // 3) tax only if ip===1
+    const pph = invoice.ip === 1
+      ? Number((total_dpp * 0.0025).toFixed(2))
+      : 0;
+
+    // 4) grand_total
+    const grand_total = invoice.ip === 1
+      ? Number((total_dpp - diskon - pph).toFixed(2))
+      : Number((total_dpp - diskon).toFixed(2));
+
     return {
-      nama_customer: invoice.nama_customer,
-      nomor_invoice: invoice.nomor_invoice,
+      nama_customer:   invoice.nama_customer,
+      nomor_invoice:   invoice.nomor_invoice,
       tanggal_invoice: invoice.tanggal_invoice,
       quantity_total,
       total_dpp,
@@ -288,25 +313,32 @@ export default function InvoicePreview() {
       }))
     }));
 
-    const payload = {
-      invoice: {
-        tanggal_invoice: invoiceData.tanggal_invoice.format('YYYY-MM-DD'),
-        diskon: invoiceData.diskon, // fixed amount discount
-        total,
-        grand_total: grandTotal,
-        ip: invoiceData.ip
-      },
-      detail_invoices,
-      custom_invoice: customEnabled
-        ? customInvoice
-            .filter(c => c.id_ikan)
-            .map(c => ({
-              nama_ikan: c.nama_ikan,
-              netto: c.netto,
-              harga: c.harga
-            }))
-        : []
-    };
+  const payload = {
+    invoice: {
+      tanggal_invoice: invoiceData.tanggal_invoice.format('YYYY-MM-DD'),
+      diskon: Number(invoiceData.diskon.toFixed(2)),
+      total: Number(total.toFixed(2)),
+      grand_total: Number(grandTotal.toFixed(2)),
+      ip: invoiceData.ip
+    },
+    detail_invoices: selectedRows.map(doItem => ({
+      id_delivery_order: doItem.id_delivery_order,
+      details: doItem.detail_delivery_order.map(d => ({
+        id_detail_delivery_order: d.id_detail_delivery_order,
+        harga: Number((priceMap[d.id_ikan] || 0).toFixed(2))
+      }))
+    })),
+    custom_invoice: customEnabled
+      ? customInvoice
+          .filter(c => c.id_ikan)
+          .map(c => ({
+            nama_ikan: c.nama_ikan,
+            netto: Number(c.netto),
+            harga: Number(c.harga.toFixed(2))
+          }))
+      : []
+  };
+
     try {
       setLoading(true);
       const token = sessionStorage.getItem('token');
@@ -345,24 +377,31 @@ export default function InvoicePreview() {
     setSelectedDoDetail(null);
   };
 
-  // Show invoice detail modal
-  const showInvoiceDetail = (invoice) => {
-    // Preprocess detail_invoices to ensure harga and grand_total fields exist for display
-    if (invoice.detail_invoices) {
-      invoice.detail_invoices = invoice.detail_invoices.map(item => {
-        const harga = item.records && item.records[0]?.harga != null ? item.records[0].harga : (priceMap[item.id_ikan] || 0);
-        const qty = item.netto_second_total || 0;
-        const grand_total = harga * qty;
-        return {
-          ...item,
-          harga,
-          grand_total
-        };
-      });
-    }
-    setSelectedInvoiceDetail(invoice);
+  const showInvoiceDetail = invoice => {
+    const useCustom = Array.isArray(invoice.custom_invoices) && invoice.custom_invoices.length > 0;
+    const detailSource = (useCustom
+      ? invoice.custom_invoices.map(c => ({
+          nama_ikan: c.nama_ikan,
+          quantity: c.netto_total,
+          harga: c.records[0].harga,
+          total: c.netto_total * c.records[0].harga
+        }))
+      : invoice.detail_invoices.map(item => {
+          const qty   = item.netto_second_total || 0;
+          const harga = item.records[0].harga || priceMap[item.id_ikan] || 0;
+          return {
+            nama_ikan: item.nama_ikan,
+            quantity:  qty,
+            harga,
+            total:     qty * harga
+          };
+        })
+    );
+
+    setSelectedInvoiceDetail({ ...invoice, detail_invoices: detailSource });
     setDetailInvoiceModalVisible(true);
   };
+
 
   const handleDetailInvoiceModalClose = () => {
     setSelectedInvoiceDetail(null);
@@ -636,32 +675,43 @@ export default function InvoicePreview() {
           footer={null}
           width={700}
         >
-          {selectedInvoiceDetail ? (
+          {selectedInvoiceDetail && (
             <>
               <Descriptions bordered column={1} size="small">
-                <Descriptions.Item label="Nomor Invoice">{selectedInvoiceDetail.nomor_invoice}</Descriptions.Item>
-                <Descriptions.Item label="Tanggal Invoice">{selectedInvoiceDetail.tanggal_invoice}</Descriptions.Item>
-                <Descriptions.Item label="Nama Customer">{selectedInvoiceDetail.nama_customer}</Descriptions.Item>
-                <Descriptions.Item label="Diskon">{selectedInvoiceDetail.diskon}</Descriptions.Item>
-                <Descriptions.Item label="Include Pajak">{selectedInvoiceDetail.ip ? 'Ya' : 'Tidak'}</Descriptions.Item>
-                <Descriptions.Item label="Grand Total">{formatCurrency(selectedInvoiceDetail.grand_total)}</Descriptions.Item>
+                <Descriptions.Item label="Nomor Invoice">
+                  {selectedInvoiceDetail.nomor_invoice}
+                </Descriptions.Item>
+                <Descriptions.Item label="Tanggal Invoice">
+                  {selectedInvoiceDetail.tanggal_invoice}
+                </Descriptions.Item>
+                <Descriptions.Item label="Nama Customer">
+                  {selectedInvoiceDetail.nama_customer}
+                </Descriptions.Item>
+                <Descriptions.Item label="Diskon">
+                  {selectedInvoiceDetail.diskon}
+                </Descriptions.Item>
+                <Descriptions.Item label="Include Pajak">
+                  {selectedInvoiceDetail.ip ? 'Ya' : 'Tidak'}
+                </Descriptions.Item>
+                <Descriptions.Item label="Grand Total">
+                  {formatCurrency(selectedInvoiceDetail.grand_total)}
+                </Descriptions.Item>
               </Descriptions>
+
               <Table
                 style={{ marginTop: 16 }}
                 size="small"
-                rowKey="id_detail_invoice"
+                rowKey={(r, i) => i}
                 dataSource={selectedInvoiceDetail.detail_invoices}
                 pagination={false}
                 columns={[
                   { title: 'Nama Ikan', dataIndex: 'nama_ikan', key: 'nama_ikan' },
-                  { title: 'Quantity', dataIndex: 'netto_second_total', key: 'quantity' },
+                  { title: 'Quantity', dataIndex: 'quantity', key: 'quantity' },
                   { title: 'Harga (Rp)', dataIndex: 'harga', key: 'harga', render: v => formatCurrency(v) },
-                  { title: 'Total (Rp)', dataIndex: 'grand_total', key: 'total', render: v => formatCurrency(v) }
+                  { title: 'Total (Rp)', dataIndex: 'total', key: 'total', render: v => formatCurrency(v) },
                 ]}
               />
             </>
-          ) : (
-            <p>Loading...</p>
           )}
         </Modal>
         <Modal
