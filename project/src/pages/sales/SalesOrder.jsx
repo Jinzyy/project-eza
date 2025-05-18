@@ -45,7 +45,13 @@ export default function SalesOrder() {
   // Filters state
   const [dateRange, setDateRange] = useState([null, null]);
   const [sortOrder, setSortOrder] = useState('desc'); // 'asc' or 'desc'
+  const [sppFilter, setSppFilter] = useState('all'); // 'all', true, false
   const [filterLoading, setFilterLoading] = useState(false);
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize] = useState(25);
+  const [totalItems, setTotalItems] = useState(0);
 
   const token = sessionStorage.getItem('token');
 
@@ -89,7 +95,7 @@ export default function SalesOrder() {
     if (token) fetchIkan();
   }, [token]);
 
-  // Fetch Sales Orders with filters
+  // Fetch Sales Orders with filters and pagination
   const fetchSalesOrders = async (params = {}) => {
     setFilterLoading(true);
     try {
@@ -97,6 +103,9 @@ export default function SalesOrder() {
       if (params.date_start) query.append('date_start', params.date_start);
       if (params.date_end) query.append('date_end', params.date_end);
       if (params.sort) query.append('sort', params.sort);
+      if (params.spp !== undefined && params.spp !== 'all') query.append('spp', params.spp);
+      if (params.page) query.append('page', params.page);
+      if (params.pageSize) query.append('limit', params.pageSize);
 
       const url = `${config.API_BASE_URL}/sales_order${query.toString() ? '?' + query.toString() : ''}`;
       const res = await fetch(url, {
@@ -108,7 +117,10 @@ export default function SalesOrder() {
         return;
       }
       const json = await res.json();
-      if (json.status) setSalesOrders(json.data);
+      if (json.status) {
+        setSalesOrders(json.data);
+        setTotalItems(json.total || 0); // assuming backend returns total count in json.total
+      }
     } catch {
       message.error('Kesalahan jaringan saat ambil sales order');
     } finally {
@@ -116,10 +128,10 @@ export default function SalesOrder() {
     }
   };
 
-  // Initial fetch with default sort desc
+  // Initial fetch with default sort desc and page 1
   useEffect(() => {
     if (token) {
-      fetchSalesOrders({ sort: 'desc' });
+      fetchSalesOrders({ sort: 'desc', page: 1, pageSize });
     }
   }, [token]);
 
@@ -206,7 +218,7 @@ export default function SalesOrder() {
       }))
     };
     const success = await submitSalesOrder(payload);
-    if (success) navigate('/sales');
+    if (success) navigate('/sales/sales-order');
   };
 
   // Show detail modal
@@ -287,7 +299,11 @@ export default function SalesOrder() {
     setSortOrder(value);
   };
 
-  // Apply filters
+  const onSppFilterChange = (value) => {
+    setSppFilter(value);
+  };
+
+  // Apply filters with pagination reset
   const applyFilters = () => {
     const params = {};
     if (dateRange && dateRange[0] && dateRange[1]) {
@@ -297,14 +313,41 @@ export default function SalesOrder() {
     if (sortOrder) {
       params.sort = sortOrder;
     }
+    if (sppFilter && sppFilter !== 'all') {
+      params.spp = sppFilter;
+    }
+    params.page = 1;
+    params.pageSize = pageSize;
+    setCurrentPage(1);
     fetchSalesOrders(params);
   };
 
-  // Reset filters
+  // Reset filters to initial state and reload
   const resetFilters = () => {
     setDateRange([null, null]);
     setSortOrder('desc');
-    fetchSalesOrders({ sort: 'desc' });
+    setSppFilter('all');
+    setCurrentPage(1);
+    fetchSalesOrders({ sort: 'desc', page: 1, pageSize });
+  };
+
+  // Handle page change
+  const onPageChange = (page) => {
+    setCurrentPage(page);
+    const params = {};
+    if (dateRange && dateRange[0] && dateRange[1]) {
+      params.date_start = dateRange[0].format('YYYY-MM-DD');
+      params.date_end = dateRange[1].format('YYYY-MM-DD');
+    }
+    if (sortOrder) {
+      params.sort = sortOrder;
+    }
+    if (sppFilter && sppFilter !== 'all') {
+      params.spp = sppFilter;
+    }
+    params.page = page;
+    params.pageSize = pageSize;
+    fetchSalesOrders(params);
   };
 
   // Kolom tabel detail ikan
@@ -426,6 +469,11 @@ export default function SalesOrder() {
               <Option value="asc">Tanggal Ascending</Option>
               <Option value="desc">Tanggal Descending</Option>
             </Select>
+            <Select value={sppFilter} onChange={onSppFilterChange} style={{ width: 150 }}>
+              <Option value="all">Semua SPP</Option>
+              <Option value="1">SPP</Option>
+              <Option value="0">Non SPP</Option>
+            </Select>
             <Button type="primary" onClick={applyFilters} loading={filterLoading}>Terapkan Filter</Button>
             <Button onClick={resetFilters} disabled={filterLoading}>Reset Filter</Button>
           </Space>
@@ -434,7 +482,13 @@ export default function SalesOrder() {
             dataSource={salesOrders}
             columns={salesOrderColumns}
             rowKey="id_sales_order"
-            pagination={{ pageSize: 5 }}
+            pagination={{
+              current: currentPage,
+              pageSize: pageSize,
+              total: totalItems,
+              onChange: onPageChange,
+              showSizeChanger: false
+            }}
             loading={filterLoading}
           />
 
@@ -458,9 +512,10 @@ export default function SalesOrder() {
                     title: 'Total Harga',
                     key: 'total',
                     render: (_, item) => (item.berat * item.harga).toLocaleString()
-                  }
+                  },
+                  { title: 'Catatan', dataIndex: 'catatan', key: 'catatan', render: val => val || '-' }
                 ]}
-                pagination={false}
+                pagination={true}
                 rowKey="id_detail_sales_order"
                 size="small"
               />

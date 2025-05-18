@@ -55,13 +55,13 @@ export default function DeliveryOrder() {
         ...formatDateRangeParams(soDateRange),
         ...(soSort !== 'reset' ? { sort: soSort } : {}),
         page: soPagination.current,
-        limit: soPagination.pageSize,  // use 'limit' param
+        limit: soPagination.pageSize,
       };
       const doParams = {
         ...formatDateRangeParams(doDateRange),
         ...(doSort !== 'reset' ? { sort: doSort } : {}),
         page: doPagination.current,
-        limit: doPagination.pageSize,  // use 'limit' param
+        limit: doPagination.pageSize,
       };
 
       // Build query strings
@@ -73,9 +73,6 @@ export default function DeliveryOrder() {
         axios.get(`${API}/delivery_order${doQuery ? `?${doQuery}` : ''}`, { headers: { Authorization: token } }),
         axios.get(`${API}/customer`, { headers: { Authorization: token } })
       ]);
-
-      console.log('SO Response:', soRes.data);
-      console.log('DO Response:', doRes.data);
 
       if (soRes.data.status) {
         setSalesOrders(soRes.data.data);
@@ -105,21 +102,19 @@ export default function DeliveryOrder() {
 
   // Handle DO table pagination change
   const handleDoTableChange = (pagination) => {
-    console.log('DO Table pagination change:', pagination);
     setDoPagination(prev => ({
       ...prev,
       current: pagination.current,
-      pageSize: 25, // fixed page size
+      pageSize: 25,
     }));
   };
 
   // Handle SO table pagination change
   const handleSoTableChange = (pagination) => {
-    console.log('SO Table pagination change:', pagination);
     setSoPagination(prev => ({
       ...prev,
       current: pagination.current,
-      pageSize: 25, // fixed page size
+      pageSize: 25,
     }));
   };
 
@@ -282,27 +277,35 @@ export default function DeliveryOrder() {
     }
     const { tanggal_do, nomor_kendaraan, catatan } = fv;
 
+    if (!tanggal_do || !tanggal_do.format) {
+      message.error('Tanggal DO tidak valid');
+      return;
+    }
+
+    // All items with selectedStock and nettoSecond go to detail_delivery_order
     const detailDeliveryOrder = cards
-      .filter(c => c.mode === 'pilih' && c.selectedStock && c.nettoSecond != null)
+      .filter(c => c.selectedStock && c.nettoSecond != null)
       .map(c => ({
         id_ikan:      c.id_ikan,
         netto_first:  c.stokWeight,
         netto_second: c.nettoSecond
       }));
 
-    const detailPallet = Array.from(new Set(
-      cards
-        .filter(c => c.mode === 'pilih' && c.selectedStock)
-        .map(c => c.selectedStock.id_pallet)
-    ));
-
+    // Only 'pecah' mode items go to update_stok
     const updateStok = cards
       .filter(c => c.mode === 'pecah' && c.selectedStock && c.nettoSecond != null)
       .map(c => ({
         id_pallet:    c.selectedStock.id_pallet,
         id_ikan:      c.id_ikan,
-        netto_second: c.nettoSecond
+        netto_second: c.stokWeight - c.nettoSecond  // Subtract user input from original weight
       }));
+
+    // Collect all id_pallet from selected pallets ONLY in 'pilih' mode
+    const detailPallet = Array.from(new Set(
+      cards
+        .filter(c => c.mode === 'pilih' && c.selectedStock)
+        .map(c => c.selectedStock.id_pallet)
+    ));
 
     const payload = {
       delivery_order: {
@@ -348,16 +351,18 @@ export default function DeliveryOrder() {
     }
   };
 
+
   return (
     <Layout className="min-h-screen">
       <Header />
       <Content className="container mx-auto px-6 py-8">
+        <Button icon={<ArrowLeftIcon size={16} />} onClick={() => navigate('/sales')} className="mb-6">Kembali</Button>
         <Title level={3}>List Delivery Orders</Title>
         <Space style={{ marginBottom: 16 }} align="center" wrap>
           <RangePicker
             onChange={(dates) => {
               setDoDateRange(dates);
-              setDoPagination(prev => ({ ...prev, current: 1 })); // reset page on filter change
+              setDoPagination(prev => ({ ...prev, current: 1 }));
             }}
             allowClear
             placeholder={['Tanggal mulai', 'Tanggal akhir']}
@@ -366,7 +371,7 @@ export default function DeliveryOrder() {
             value={doSort}
             onChange={(value) => {
               setDoSort(value);
-              setDoPagination(prev => ({ ...prev, current: 1 })); // reset page on sort change
+              setDoPagination(prev => ({ ...prev, current: 1 }));
             }}
             style={{ width: 160 }}
             options={[
@@ -396,7 +401,7 @@ export default function DeliveryOrder() {
               <RangePicker
                 onChange={(dates) => {
                   setSoDateRange(dates);
-                  setSoPagination(prev => ({ ...prev, current: 1 })); // reset page on filter change
+                  setSoPagination(prev => ({ ...prev, current: 1 }));
                 }}
                 allowClear
                 placeholder={['Tanggal mulai', 'Tanggal akhir']}
@@ -405,7 +410,7 @@ export default function DeliveryOrder() {
                 value={soSort}
                 onChange={(value) => {
                   setSoSort(value);
-                  setSoPagination(prev => ({ ...prev, current: 1 })); // reset page on sort change
+                  setSoPagination(prev => ({ ...prev, current: 1 }));
                 }}
                 style={{ width: 160 }}
                 options={[
@@ -532,7 +537,6 @@ export default function DeliveryOrder() {
           </>
         )}
       </Content>
-      <FooterSection />
       <Modal
         open={modal.visible}
         onOk={handlePrint}

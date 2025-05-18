@@ -296,6 +296,7 @@ useEffect(() => {
       await axios.delete(`${config.API_BASE_URL}/nota_pembelian/${id}`, { headers });
       message.success('Invoice berhasil dihapus');
       fetchPurchaseNotes();
+      window.location.reload();
     } catch (error) {
       console.error('Gagal menghapus invoice:', error);
       message.error('Gagal menghapus invoice');
@@ -307,6 +308,7 @@ useEffect(() => {
 
   // Fungsi untuk memanggil endpoint printer dan mendownload PDF
   const printNota = (payload) => {
+    console.log("Ini payload : ", JSON.stringify(payload))
     message.loading({ content: 'Mempersiapkan dokumen...', key: 'print' });
     axios.post(
       `${config.API_BASE_URL}/nota_pembelian_printer`,
