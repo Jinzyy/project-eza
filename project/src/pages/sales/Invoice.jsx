@@ -143,7 +143,7 @@ export default function InvoicePreview() {
   const fetchInvoices = async (sortOrder = 'desc', page = 1, limit = invoicePageSize, ipFilter = invoiceIpFilter, dateRange = invoiceDateRange) => {
     try {
       const token = sessionStorage.getItem('token');
-      const params = { sort: sortOrder, page, limit };
+      const params = { sort: sortOrder, page, limit, cancelled:0};
       if (ipFilter !== null) params.ip = ipFilter ? 1 : 0;
       if (dateRange.length === 2) {
         params.start_date = dateRange[0].format('YYYY-MM-DD');
