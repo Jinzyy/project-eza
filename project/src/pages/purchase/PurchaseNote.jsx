@@ -577,7 +577,6 @@ export default function PurchaseNote() {
           Apakah Anda yakin ingin menghapus invoice <b>{invoiceToDelete?.nomor_nota}</b>?
         </p>
       </Modal>
-      <FooterSection />
     </Layout>
   );
 }

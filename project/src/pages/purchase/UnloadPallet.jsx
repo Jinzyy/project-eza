@@ -331,7 +331,6 @@ export default function UnloadPallet() {
           </div>
         </div>
       </Content>
-      <FooterSection />
     </Layout>
   );
 }

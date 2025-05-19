@@ -100,7 +100,6 @@ function StockRecord() {
           )}
         </div>
       </Content>
-      <FooterSection />
     </Layout>
   );
 }

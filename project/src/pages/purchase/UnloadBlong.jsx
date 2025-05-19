@@ -411,7 +411,6 @@ export default function UnloadBlong() {
       </div>
     </div>
   </Content>
-  <FooterSection />
 </Layout>
 );
 }
