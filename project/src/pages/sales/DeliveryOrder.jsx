@@ -34,6 +34,7 @@ export default function DeliveryOrder() {
   const [soSort, setSoSort] = useState('reset'); // 'ascend', 'descend', 'reset'
   const [doPagination, setDoPagination] = useState({ current: 1, pageSize: 25, total: 0 });
   const [soPagination, setSoPagination] = useState({ current: 1, pageSize: 25, total: 0 });
+  const [doSPPFilter, setDoSPPFilter] = useState(null); // null means no filter
   const API = config.API_BASE_URL;
 
   // Helper to format date range to query params
@@ -45,7 +46,7 @@ export default function DeliveryOrder() {
     };
   };
 
-  // Fetch data with date range filters, sort params, and pagination
+  // Fetch data with date range filters, sort params, spp filter, and pagination
   const fetchData = async () => {
     try {
       const token = sessionStorage.getItem('token');
@@ -62,6 +63,7 @@ export default function DeliveryOrder() {
         ...(doSort !== 'reset' ? { sort: doSort } : {}),
         page: doPagination.current,
         limit: doPagination.pageSize,
+        ...(doSPPFilter !== null ? { spp: doSPPFilter } : {}),
       };
 
       // Build query strings
@@ -95,10 +97,10 @@ export default function DeliveryOrder() {
     }
   };
 
-  // Refetch data on mount and when date ranges, sort, or pagination change
+  // Refetch data on mount and when date ranges, sort, spp filter, or pagination change
   useEffect(() => {
     fetchData();
-  }, [soDateRange, doDateRange, soSort, doSort, soPagination.current, doPagination.current]);
+  }, [soDateRange, doDateRange, soSort, doSort, doSPPFilter, soPagination.current, doPagination.current]);
 
   // Handle DO table pagination change
   const handleDoTableChange = (pagination) => {
@@ -126,6 +128,14 @@ export default function DeliveryOrder() {
       title: 'Tanggal DO',
       dataIndex: 'tanggal_do',
       key: 'tanggal_do',
+    },
+    {
+      title: 'SPP',
+      dataIndex: 'spp',
+      key: 'spp',
+      render: (val) => val
+        ? <Badge status="success" text="True" />
+        : <Badge status="default" text="False" />
     },
     {
       title: 'Aksi', key: 'aksi',
@@ -380,6 +390,21 @@ export default function DeliveryOrder() {
               { label: 'Tanggal Terbaru', value: 'desc' }
             ]}
           />
+          <Select
+            placeholder="Filter SPP"
+            value={doSPPFilter}
+            onChange={(value) => {
+              setDoSPPFilter(value);
+              setDoPagination(prev => ({ ...prev, current: 1 }));
+            }}
+            allowClear
+            style={{ width: 120 }}
+            options={[
+              { label: 'SPP: Semua', value: null },
+              { label: 'SPP: True', value: "1" },
+              { label: 'SPP: False', value: "0" }
+            ]}
+          />
         </Space>
         <Table
           rowKey="id_delivery_order"
@@ -463,65 +488,64 @@ export default function DeliveryOrder() {
               }}
             >
               <Space direction="vertical" size="large" className="w-full">
-                <Form.Item
-                  name="tanggal_do"
-                  label="Tanggal DO"
-                  rules={[{ required: true, message: 'Pilih tanggal DO' }]}
-                >
-                  <DatePicker format="YYYY-MM-DD" />
-                </Form.Item>
-                <Form.Item
-                  name="nomor_kendaraan"
-                  label="Nomor Kendaraan"
-                  rules={[{ required: true, message: 'Masukkan nomor kendaraan' }]}
-                >
-                  <Input placeholder="Plat nomor kendaraan" />
-                </Form.Item>
-                <Form.Item name="catatan" label="Catatan">
-                  <Input.TextArea rows={2} placeholder="Catatan tambahan (opsional)" />
-                </Form.Item>
-                {cards.map(c => (
-                  <Card key={c.key} title={c.nama_ikan} className="w-full">
-                    <Space wrap>
-                      <Form.Item label="Mode Pengambilan">
-                        <Select
-                          style={{ width: 160 }}
-                          value={c.mode}
-                          onChange={v => handleModeChange(c.key, v)}
-                        >
-                          <Option value="pilih">Pilih Pallet</Option>
-                          <Option value="pecah">Pecah Pallet</Option>
-                        </Select>
-                      </Form.Item>
-                      <Form.Item label="Pilih Pallet">
-                        <Select
-                          placeholder="Select pallet"
-                          style={{ width: 200 }}
-                          onChange={v => handleSelectPallet(c.key, v)}
-                          value={c.selectedStock?.id_stok_ikan}
-                        >
-                          {c.pallets.map(p => (
-                            <Option key={p.id_stok_ikan} value={p.id_stok_ikan}>
-                              Pallet {p.id_pallet} – {p.berat_bersih_ikan} kg
-                            </Option>
-                          ))}
-                        </Select>
-                      </Form.Item>
-                      <Form.Item label="Bobot dalam Pallet (kg)">
-                        <InputNumber value={c.stokWeight ?? undefined} readOnly />
-                      </Form.Item>
-                      <Form.Item label="Bobot Timbang (kg)">
-                        <InputNumber
-                          min={0}
-                          max={c.stokWeight || 0}
-                          value={c.nettoSecond}
-                          onChange={v => handleNettoSecond(c.key, v)}
-                          disabled={!c.stokWeight}
-                        />
-                      </Form.Item>
-                    </Space>
-                  </Card>
-                ))}
+                {cards.map(c => {
+                  const detail = selectedSO?.detail_sales_order.find(d => d.id_detail_sales_order === c.key);
+                  const berat = detail ? detail.berat : null;
+
+                  return (
+                    <Card
+                      key={c.key}
+                      className="w-full"
+                      title={
+                        <span>
+                          {c.nama_ikan}{' '}
+                          <span style={{ fontWeight: 'bold', color: 'gray' }}>
+                            - Bobot ikan yang dibutuhkan: {berat ?? '-'} kg
+                          </span>
+                        </span>
+                      }
+                    >
+                      <Space wrap>
+                        <Form.Item label="Mode Pengambilan">
+                          <Select
+                            style={{ width: 160 }}
+                            value={c.mode}
+                            onChange={v => handleModeChange(c.key, v)}
+                          >
+                            <Option value="pilih">Pilih Pallet</Option>
+                            <Option value="pecah">Pecah Pallet</Option>
+                          </Select>
+                        </Form.Item>
+                        <Form.Item label="Pilih Pallet">
+                          <Select
+                            placeholder="Select pallet"
+                            style={{ width: 200 }}
+                            onChange={v => handleSelectPallet(c.key, v)}
+                            value={c.selectedStock?.id_stok_ikan}
+                          >
+                            {c.pallets.map(p => (
+                              <Option key={p.id_stok_ikan} value={p.id_stok_ikan}>
+                                Pallet {p.id_pallet} – {p.berat_bersih_ikan} kg
+                              </Option>
+                            ))}
+                          </Select>
+                        </Form.Item>
+                        <Form.Item label="Bobot dalam Pallet (kg)">
+                          <InputNumber value={c.stokWeight ?? undefined} readOnly />
+                        </Form.Item>
+                        <Form.Item label="Bobot Timbang (kg)">
+                          <InputNumber
+                            min={0}
+                            max={c.stokWeight || 0}
+                            value={c.nettoSecond}
+                            onChange={v => handleNettoSecond(c.key, v)}
+                            disabled={!c.stokWeight}
+                          />
+                        </Form.Item>
+                      </Space>
+                    </Card>
+                  );
+                })}
                 <Form.Item>
                   <Button
                     type="primary"

@@ -79,8 +79,7 @@ const Login: React.FC = () => {
         {/* Sidebar ilustrasi */}
         <Col xs={0} lg={10} className="hidden lg:flex flex-col items-center justify-center p-10 bg-blue-700">
           <FishIcon size={80} className="text-white mb-4" />
-          <Title level={2} className="text-white mb-2">FishMarket</Title>
-          <Text className="text-white text-center">Platform jual beli ikan segar terbaik dan terpercaya.</Text>
+          <Title level={2} className="text-white mb-2">PT. Fortun Maritim Indonesia</Title>
         </Col>
 
         {/* Form login */}

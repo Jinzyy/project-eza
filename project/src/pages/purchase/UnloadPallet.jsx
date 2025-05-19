@@ -64,7 +64,7 @@ export default function UnloadPallet() {
         const mappedKapal = resKapal.data.data.map(k => ({ id: k.id_kapal, name: k.nama_kapal }));
         const mappedGudang = resGudang.data.data.map(g => ({ id: g.id_gudang, name: g.nama_gudang }));
         const mappedFreezer = resFreezer.data.data.map(f => ({ id: f.id_freezer, name: f.nama_freezer }));
-        const mappedPallet = resPallet.data.data.map(p => ({ id: p.id_pallet, name: p.kode_pallet, weight: p.berat_pallet || 0 }));
+        const mappedPallet = resPallet.data.data.map(p => ({ id: p.id_pallet, name: p.kode_pallet, weight: p.berat_pallet, nomor: p.nomor_pallet || 0 }));
 
         setFishOptions(mappedFish);
         setKapalOptions(mappedKapal);
@@ -248,13 +248,19 @@ export default function UnloadPallet() {
                       <Row gutter={8} align="middle" className="mb-3" key={palletIdx}>
                         <Col>
                           <Select
-                            placeholder="Pilih Pallet"
-                            style={{ width: 120 }}
-                            value={pallet.palletId}
-                            onChange={val => handlePalletChange(fishIdx, palletIdx, 'palletId', val)}
-                          >
-                            {palletOptions.map(p => <Option key={p.id} value={p.id}>{p.name}</Option>)}
-                          </Select>
+                              placeholder="Nomor Pallet"
+                              style={{ width: 120 }}
+                              value={pallet.palletId}
+                              onChange={val =>
+                                handlePalletChange(fishIdx, palletIdx, 'palletId', val)
+                              }
+                            >
+                              {palletOptions.map(p => (
+                                <Option key={p.id} value={p.id}>
+                                  {p.nomor}
+                                </Option>
+                              ))}
+                            </Select>
                         </Col>
                         <Col>
                           <InputNumber
