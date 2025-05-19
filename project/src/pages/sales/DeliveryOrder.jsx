@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Layout, Typography, Button, Table, Card, Form, DatePicker,
-  Select, InputNumber, Input, Space, Badge, message, Modal
+  Select, InputNumber, Space, message, Modal, Tag, Input
 } from 'antd';
 import { ArrowLeftIcon, PrinterIcon, EyeIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -30,9 +30,9 @@ export default function DeliveryOrder() {
   const [customers, setCustomers] = useState([]);
   const [doDateRange, setDoDateRange] = useState(null);
   const [soDateRange, setSoDateRange] = useState(null);
-  const [doSort, setDoSort] = useState('reset'); // 'ascend', 'descend', 'reset'
-  const [soSort, setSoSort] = useState('reset'); // 'ascend', 'descend', 'reset'
-  const [doPagination, setDoPagination] = useState({ current: 1, pageSize: 25, total: 0 });
+  const [doSort, setDoSort] = useState('reset'); // 'asc', 'desc', 'reset'
+  const [soSort, setSoSort] = useState('reset'); // 'asc', 'desc', 'reset'
+  const [doPagination, setDoPagination] = useState({ current: 1, pageSize: 10, total: 0 });
   const [soPagination, setSoPagination] = useState({ current: 1, pageSize: 25, total: 0 });
   const [doSPPFilter, setDoSPPFilter] = useState(null); // null means no filter
   const API = config.API_BASE_URL;
@@ -42,7 +42,7 @@ export default function DeliveryOrder() {
     if (!range || range.length !== 2) return {};
     return {
       date_start: range[0].format('YYYY-MM-DD'),
-      date_end:   range[1].format('YYYY-MM-DD')
+      date_end: range[1].format('YYYY-MM-DD')
     };
   };
 
@@ -79,15 +79,17 @@ export default function DeliveryOrder() {
       if (soRes.data.status) {
         setSalesOrders(soRes.data.data);
         setSoPagination(prev => ({
-          ...prev,
-          total: soRes.data.total ?? soRes.data.data.length ?? 0,
+          current: soRes.data.pagination?.current_page ?? prev.current,
+          pageSize: soRes.data.pagination?.per_page ?? prev.pageSize,
+          total: soRes.data.pagination?.total_items ?? soRes.data.data.length ?? 0,
         }));
       }
       if (doRes.data.status) {
         setDos(doRes.data.data);
         setDoPagination(prev => ({
-          ...prev,
-          total: doRes.data.total ?? doRes.data.data.length ?? 0,
+          current: doRes.data.pagination?.current_page ?? prev.current,
+          pageSize: doRes.data.pagination?.per_page ?? prev.pageSize,
+          total: doRes.data.pagination?.total_items ?? doRes.data.data.length ?? 0,
         }));
       }
       if (custRes.data.status) setCustomers(custRes.data.data);
@@ -100,24 +102,24 @@ export default function DeliveryOrder() {
   // Refetch data on mount and when date ranges, sort, spp filter, or pagination change
   useEffect(() => {
     fetchData();
-  }, [soDateRange, doDateRange, soSort, doSort, doSPPFilter, soPagination.current, doPagination.current]);
+  }, [soDateRange, doDateRange, soSort, doSort, doSPPFilter, soPagination.current, soPagination.pageSize, doPagination.current, doPagination.pageSize]);
 
-  // Handle DO table pagination change
+  // Handle DO table pagination and page size change
   const handleDoTableChange = (pagination) => {
-    setDoPagination(prev => ({
-      ...prev,
+    setDoPagination({
       current: pagination.current,
-      pageSize: 25,
-    }));
+      pageSize: pagination.pageSize,
+      total: doPagination.total,
+    });
   };
 
-  // Handle SO table pagination change
+  // Handle SO table pagination and page size change
   const handleSoTableChange = (pagination) => {
-    setSoPagination(prev => ({
-      ...prev,
+    setSoPagination({
       current: pagination.current,
-      pageSize: 25,
-    }));
+      pageSize: pagination.pageSize,
+      total: soPagination.total,
+    });
   };
 
   const doColumns = [
@@ -134,8 +136,8 @@ export default function DeliveryOrder() {
       dataIndex: 'spp',
       key: 'spp',
       render: (val) => val
-        ? <Badge status="success" text="True" />
-        : <Badge status="default" text="False" />
+        ? <Tag color="green">True</Tag>
+        : <Tag color="red">False</Tag>
     },
     {
       title: 'Aksi', key: 'aksi',
@@ -169,8 +171,8 @@ export default function DeliveryOrder() {
       title: 'Status', key: 'processed',
       render: (_, r) =>
         r.processed
-          ? <Badge status="success" text="Used" />
-          : <Badge status="default" text="Unused" />
+          ? <Tag color="green">Sudah Dipakai</Tag>
+          : <Tag color="red">Belum Dipakai</Tag>
     },
     {
       title: 'Aksi', key: 'aksi',
@@ -412,9 +414,10 @@ export default function DeliveryOrder() {
           columns={doColumns}
           pagination={{
             current: doPagination.current,
-            pageSize: 10,
+            pageSize: doPagination.pageSize,
             total: doPagination.total,
-            showSizeChanger: false,
+            showSizeChanger: true,
+            pageSizeOptions: ['10', '25', '50', '100'],
           }}
           onChange={handleDoTableChange}
           loading={loading}
@@ -452,9 +455,10 @@ export default function DeliveryOrder() {
               rowSelection={rowSelection}
               pagination={{
                 current: soPagination.current,
-                pageSize: 25,
+                pageSize: soPagination.pageSize,
                 total: soPagination.total,
-                showSizeChanger: false,
+                showSizeChanger: true,
+                pageSizeOptions: ['10', '25', '50', '100'],
               }}
               onChange={handleSoTableChange}
               loading={loading}
@@ -488,6 +492,28 @@ export default function DeliveryOrder() {
               }}
             >
               <Space direction="vertical" size="large" className="w-full">
+                <Form.Item
+                  label="Tanggal DO"
+                  name="tanggal_do"
+                  rules={[{ required: true, message: 'Tanggal DO wajib diisi' }]}
+                >
+                  <DatePicker defaultValue={dayjs()} />
+                </Form.Item>
+
+                <Form.Item
+                  label="Nomor Kendaraan"
+                  name="nomor_kendaraan"
+                >
+                  <Input />
+                </Form.Item>
+
+                <Form.Item
+                  label="Catatan"
+                  name="catatan"
+                >
+                  <Input.TextArea rows={3} />
+                </Form.Item>
+
                 {cards.map(c => {
                   const detail = selectedSO?.detail_sales_order.find(d => d.id_detail_sales_order === c.key);
                   const berat = detail ? detail.berat : null;

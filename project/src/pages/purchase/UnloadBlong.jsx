@@ -257,10 +257,8 @@ export default function UnloadBlong() {
                     rules={[{ required: true, message: 'Pilih jenis armada' }]}
                   >
                     <Select placeholder="Jenis armada">
-                      <Option value="Container">Container</Option>
-                      <Option value="TRUK">Truk</Option>
-                      <Option value="KERETA">Kereta</Option>
-                      <Option value="KAPAL">Kapal Laut</Option>
+                      <Option value="CONTAINER">Container</Option>
+                      <Option value="COLLECTING">Collecting</Option>
                     </Select>
                   </Form.Item>
                 </Col>

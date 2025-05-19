@@ -220,9 +220,8 @@ export default function UnloadPallet() {
                 <Col span={12}>
                   <Form.Item name="armadaType" noStyle rules={[{ required: true, message: 'Pilih jenis armada' }]}>
                     <Select placeholder="Jenis armada">
-                      <Option value="TRUK">Truk</Option>
-                      <Option value="KERETA">Kereta</Option>
-                      <Option value="KAPAL">Kapal Laut</Option>
+                      <Option value="CONTAINER">Container</Option>
+                      <Option value="COLLECTING">Collecting</Option>
                     </Select>
                   </Form.Item>
                 </Col>
@@ -233,7 +232,7 @@ export default function UnloadPallet() {
                 </Col>
               </Row>
             </Form.Item>
-            <Form.Item name="grp" label="GRP" valuePropName="checked" rules={[{ required: true, message: 'Tentukan status GRP' }]}>
+            <Form.Item name="grp" label="GRP" valuePropName="checked">
               <Switch />
             </Form.Item>
           </Form>

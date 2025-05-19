@@ -12,13 +12,12 @@ import {
   Select,
   Modal,
 } from 'antd';
-import { ArrowLeftIcon, PrinterIcon } from 'lucide-react';
+import { ArrowLeftIcon, PrinterIcon, EyeIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 import axios from 'axios';
 import config from '../../config';
 import Header from '../../components/Header';
-import FooterSection from '../../components/FooterSection';
 
 const { Content } = Layout;
 const { Title } = Typography;
@@ -27,7 +26,7 @@ const { RangePicker } = DatePicker;
 export default function PurchaseNote() {
   const navigate = useNavigate();
 
-  // State for penerimaan barang
+  // Penerimaan Barang states
   const [penerimaanNotes, setPenerimaanNotes] = useState([]);
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
   const [dateRange, setDateRange] = useState([]);
@@ -37,16 +36,25 @@ export default function PurchaseNote() {
   const [priceMap, setPriceMap] = useState({});
   const [date, setDate] = useState(dayjs());
 
-  // State for Nota Pembelian Tersimpan filters
+  // Pagination for penerimaan barang
+  const [penerimaanCurrentPage, setPenerimaanCurrentPage] = useState(1);
+  const [penerimaanPageSize, setPenerimaanPageSize] = useState(10);
+  const [penerimaanTotalItems, setPenerimaanTotalItems] = useState(0);
+
+  // Nota Pembelian Tersimpan states
+  const [purchaseNotes, setPurchaseNotes] = useState([]);
   const [npDateRange, setNpDateRange] = useState([]);
   const [npGrpFilter, setNpGrpFilter] = useState(null);
   const [npSortOrder, setNpSortOrder] = useState('desc');
 
-  // Purchase notes data
-  const [purchaseNotes, setPurchaseNotes] = useState([]);
+  // Pagination for nota pembelian
+  const [npCurrentPage, setNpCurrentPage] = useState(1);
+  const [npPageSize, setNpPageSize] = useState(25);
+  const [npTotalItems, setNpTotalItems] = useState(0);
 
-  // Expanded row keys for controlling single expanded row
-  const [expandedRowKeys, setExpandedRowKeys] = useState([]);
+  // Modal for Nota Pembelian details
+  const [detailModalVisible, setDetailModalVisible] = useState(false);
+  const [detailModalData, setDetailModalData] = useState(null);
 
   // Delete modal state
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
@@ -55,128 +63,141 @@ export default function PurchaseNote() {
   const token = sessionStorage.getItem('token');
   const headers = { Authorization: token };
 
-  // Fetch penerimaan barang with filters
-  useEffect(() => {
-    const fetchPenerimaanBarang = async () => {
-      try {
-        const params = {
-          sort: sortOrder,
-        };
+  // Fetch penerimaan barang with filters and pagination
+  const fetchPenerimaanBarang = async () => {
+    try {
+      const params = {
+        sort: sortOrder,
+        page: penerimaanCurrentPage,
+        limit: penerimaanPageSize,
+      };
 
-        if (dateRange.length === 2) {
-          params.date_start = dateRange[0].format('YYYY-MM-DD');
-          params.date_end = dateRange[1].format('YYYY-MM-DD');
-        }
-
-        if (grpFilter !== null) {
-          params['pb.grp'] = grpFilter;
-        }
-
-        if (doneFilter !== null) {
-          params.done = doneFilter;
-        }
-
-        const response = await axios.get(`${config.API_BASE_URL}/penerimaan_barang`, {
-          headers,
-          params,
-        });
-
-        const { data } = response;
-
-        if (data.status && Array.isArray(data.data)) {
-          const formattedNotes = data.data.map(item => ({
-            key: item.id_penerimaan_barang,
-            id: item.id_penerimaan_barang,
-            code: item.nomor_penerimaan_barang,
-            date: item.tanggal_terima,
-            grp: item.grp,
-            usedInPurchaseNote: item.done === 1,
-            details: item.detail_penerimaan_barang?.map(detail => ({
-              key: detail.id_detail_penerimaan_barang,
-              id_ikan: detail.id_ikan,
-              fishName: detail.nama_ikan,
-              weight: detail.berat_awal,
-              shrink: detail.potong_susut,
-            })) || [],
-          }));
-
-          setPenerimaanNotes(formattedNotes);
-        }
-      } catch (error) {
-        console.error(error);
-        message.error('Gagal mengambil data penerimaan barang');
+      if (dateRange.length === 2) {
+        params.date_start = dateRange[0].format('YYYY-MM-DD');
+        params.date_end = dateRange[1].format('YYYY-MM-DD');
       }
-    };
 
-    fetchPenerimaanBarang();
-  }, [dateRange, grpFilter, sortOrder, doneFilter]);
+      if (grpFilter !== null) {
+        params['pb.grp'] = grpFilter;
+      }
 
-  // Fetch nota pembelian with filters
-  useEffect(() => {
-    const fetchPurchaseNotes = async () => {
-      try {
-        const params = {
-          sort: npSortOrder,
-        };
+      if (doneFilter !== null) {
+        params.done = doneFilter;
+      }
 
-        if (npDateRange.length === 2) {
-          params.date_start = npDateRange[0].format('YYYY-MM-DD');
-          params.date_end = npDateRange[1].format('YYYY-MM-DD');
-        }
+      const response = await axios.get(`${config.API_BASE_URL}/penerimaan_barang`, {
+        headers,
+        params,
+      });
 
-        if (npGrpFilter !== null) {
-          params['pb.grp'] = npGrpFilter;
-        }
+      const { data } = response;
 
-        const { data } = await axios.get(`${config.API_BASE_URL}/nota_pembelian`, {
-          headers,
-          params,
-        });
+      if (data.status && Array.isArray(data.data)) {
+        const formattedNotes = data.data.map((item, index) => ({
+          key: item.id_penerimaan_barang,
+          id: item.id_penerimaan_barang,
+          code: item.nomor_penerimaan_barang,
+          date: item.tanggal_terima,
+          grp: item.grp,
+          usedInPurchaseNote: item.done === 1,
+          details: item.detail_penerimaan_barang?.map(detail => ({
+            key: detail.id_detail_penerimaan_barang,
+            id_ikan: detail.id_ikan,
+            fishName: detail.nama_ikan,
+            weight: Number(detail.berat_awal) || 0,
+            shrink: Number(detail.potong_susut) || 0,
+          })) || [],
+          nomor: (penerimaanCurrentPage - 1) * penerimaanPageSize + index + 1,
+        }));
 
-        if (!data.status) throw new Error('Fetch failed');
+        setPenerimaanNotes(formattedNotes);
+        setPenerimaanTotalItems(data.pagination?.total_items || 0);
+      } else {
+        setPenerimaanNotes([]);
+        setPenerimaanTotalItems(0);
+      }
+    } catch (error) {
+      console.error(error);
+      message.error('Gagal mengambil data penerimaan barang');
+    }
+  };
 
-        const activeNotes = data.data
-          .filter(note => note.cancelled === 0)
-          .map(note => {
-            const details = note.detail_nota_pembelian.map(d => {
-              const netWeight = d.berat_awal - d.potong_susut;
-              return {
-                key: d.id_detail_nota_pembelian,
-                nomorPenerimaan: d.nomor_penerimaan_barang,
-                namaKapal: d.nama_kapal,
-                namaGudang: d.nama_gudang,
-                metodeKapal: d.metode_kapal,
-                idIkan: d.id_ikan,
-                namaIkan: d.nama_ikan,
-                quantity: netWeight,
-                harga: d.harga,
-                jumlah: netWeight * d.harga,
-              };
-            });
+  // Fetch nota pembelian with filters and pagination
+  const fetchPurchaseNotes = async () => {
+    try {
+      const params = {
+        sort: npSortOrder,
+        page: npCurrentPage,
+        limit: npPageSize,
+      };
 
-            const totalQuantity = details.reduce((sum, d) => sum + d.quantity, 0);
-            const totalJumlah = details.reduce((sum, d) => sum + d.jumlah, 0);
+      if (npDateRange.length === 2) {
+        params.date_start = npDateRange[0].format('YYYY-MM-DD');
+        params.date_end = npDateRange[1].format('YYYY-MM-DD');
+      }
 
+      if (npGrpFilter !== null) {
+        params['pb.grp'] = npGrpFilter;
+      }
+
+      const { data } = await axios.get(`${config.API_BASE_URL}/nota_pembelian`, {
+        headers,
+        params,
+      });
+
+      if (!data.status) throw new Error('Fetch failed');
+
+      const activeNotes = (data.data || [])
+        .filter(note => note.cancelled === 0)
+        .map(note => {
+          const details = (note.detail_nota_pembelian || []).map(d => {
+            const quantity = Number(d.quantity) || 0; // Use quantity directly if available
+            const harga = Number(d.harga) || 0;
+            const jumlah = Number(d.jumlah) || 0; // Use jumlah directly if available
             return {
-              key: note.id_nota_pembelian,
-              id: note.id_nota_pembelian,
-              nomor_nota: note.nomor_nota,
-              tanggal_nota: note.tanggal_nota,
-              grp: note.grp,
-              details,
-              totalQuantity,
-              totalJumlah,
+              key: d.id_detail_nota_pembelian,
+              nomorPenerimaan: d.nomor_penerimaan_barang,
+              namaKapal: d.nama_kapal,
+              namaGudang: d.nama_gudang,
+              metodeKapal: d.metode_kapal,
+              idIkan: d.id_ikan,
+              namaIkan: d.nama_ikan,
+              quantity,
+              harga,
+              jumlah,
             };
           });
 
-        setPurchaseNotes(activeNotes);
-      } catch (error) {
-        message.error('Gagal mengambil data nota pembelian');
-      }
-    };
+          const total_quantity = details.reduce((sum, d) => sum + (Number(d.quantity) || 0), 0);
+          const total_jumlah = details.reduce((sum, d) => sum + (Number(d.jumlah) || 0), 0);
 
+          return {
+            key: note.id_nota_pembelian,
+            id: note.id_nota_pembelian,
+            nomor_nota: note.nomor_nota,
+            tanggal_nota: note.tanggal_nota,
+            grp: note.grp,
+            details,
+            total_quantity,
+            total_jumlah,
+          };
+        });
+
+      setPurchaseNotes(activeNotes);
+      setNpTotalItems(data.pagination?.total_items || 0);
+    } catch (error) {
+      message.error('Gagal mengambil data nota pembelian');
+    }
+  };
+
+  // Initial and dependency-based fetches
+  useEffect(() => {
+    fetchPenerimaanBarang();
+  }, [dateRange, grpFilter, sortOrder, doneFilter, penerimaanCurrentPage, penerimaanPageSize]);
+
+  useEffect(() => {
     fetchPurchaseNotes();
-  }, [npDateRange, npGrpFilter, npSortOrder]);
+  }, [npDateRange, npGrpFilter, npSortOrder, npCurrentPage, npPageSize]);
 
   // Summary of selected penerimaan
   const summaryMap = selectedRowKeys.reduce((acc, key) => {
@@ -184,7 +205,7 @@ export default function PurchaseNote() {
     if (note) {
       note.details.forEach(d => {
         if (!acc[d.id_ikan]) acc[d.id_ikan] = { id_ikan: d.id_ikan, fishName: d.fishName, netWeight: 0 };
-        acc[d.id_ikan].netWeight += d.weight - d.shrink;
+        acc[d.id_ikan].netWeight += (Number(d.weight) || 0) - (Number(d.shrink) || 0);
       });
     }
     return acc;
@@ -218,7 +239,10 @@ export default function PurchaseNote() {
     {
       title: 'Total Harga (Rp)',
       key: 'totalPrice',
-      render: (_, row) => `Rp ${(row.weight * (priceMap[row.id_ikan] || 0)).toLocaleString()}`,
+      render: (_, row) => {
+        const total = (Number(row.weight) || 0) * (Number(priceMap[row.id_ikan]) || 0);
+        return `Rp ${total.toLocaleString()}`;
+      },
     },
   ];
 
@@ -240,45 +264,13 @@ export default function PurchaseNote() {
           message.success('Nota pembelian berhasil dibuat');
           setSelectedRowKeys([]);
           setPriceMap({});
-          // Refresh purchase notes
-          return axios.get(`${config.API_BASE_URL}/nota_pembelian`, { headers });
-        }
-      })
-      .then(({ data }) => {
-        if (data && data.status) {
-          const notes = data.data
-            .filter(note => note.cancelled === 0)
-            .map(note => {
-              const details = note.detail_nota_pembelian.map(d => {
-                const netWeight = d.berat_awal - d.potong_susut;
-                const subtotal = netWeight * d.harga;
-                return {
-                  key: d.id_detail_nota_pembelian,
-                  nomorPenerimaan: d.nomor_penerimaan_barang,
-                  namaKapal: d.nama_kapal,
-                  namaGudang: d.nama_gudang,
-                  metodeKapal: d.metode_kapal,
-                  idIkan: d.id_ikan,
-                  namaIkan: d.nama_ikan,
-                  quantity: netWeight,
-                  harga: d.harga,
-                  jumlah: subtotal,
-                };
-              });
-              const totalQuantity = details.reduce((sum, d) => sum + d.quantity, 0);
-              const totalJumlah = details.reduce((sum, d) => sum + d.jumlah, 0);
-              return {
-                key: note.id_nota_pembelian,
-                id: note.id_nota_pembelian,
-                nomor_nota: note.nomor_nota,
-                tanggal_nota: note.tanggal_nota,
-                grp: note.grp,
-                details,
-                totalQuantity,
-                totalJumlah,
-              };
-            });
-          setPurchaseNotes(notes);
+          // Refetch both penerimaan and purchase notes to update status and data
+          setPenerimaanCurrentPage(1);
+          setNpCurrentPage(1);
+          fetchPenerimaanBarang();
+          fetchPurchaseNotes();
+        } else {
+          message.error('Gagal membuat nota pembelian');
         }
       })
       .catch(() => message.error('Gagal membuat nota pembelian'));
@@ -289,10 +281,9 @@ export default function PurchaseNote() {
     try {
       await axios.delete(`${config.API_BASE_URL}/nota_pembelian/${id}`, { headers });
       message.success('Invoice berhasil dihapus');
-      // Refresh purchase notes after deletion
-      setNpDateRange([]);
-      setNpGrpFilter(null);
-      setNpSortOrder('desc');
+      // Refetch purchase notes and penerimaan barang after deletion
+      fetchPurchaseNotes();
+      fetchPenerimaanBarang();
     } catch (error) {
       console.error('Gagal menghapus invoice:', error);
       message.error('Gagal menghapus invoice');
@@ -333,9 +324,15 @@ export default function PurchaseNote() {
       });
   };
 
+  // Show detail modal for Nota Pembelian
+  const showDetailModal = (record) => {
+    setDetailModalData(record);
+    setDetailModalVisible(true);
+  };
+
   // Confirm and handle print
   const handlePrint = (record) => {
-    const { nomor_nota, tanggal_nota, totalQuantity, totalJumlah, details } = record;
+    const { nomor_nota, tanggal_nota, total_quantity, total_jumlah, details } = record;
     const nomor_penerimaan_barang = [...new Set(details.map(d => d.nomorPenerimaan))];
     const nama_kapal = [...new Set(details.map(d => d.namaKapal))];
     const nama_gudang = [...new Set(details.map(d => d.namaGudang))];
@@ -348,8 +345,8 @@ export default function PurchaseNote() {
       tanggal_nota,
       nama_gudang,
       metode_kapal,
-      quantity_total: totalQuantity,
-      jumlah_total: totalJumlah,
+      quantity_total: total_quantity,
+      jumlah_total: total_jumlah,
       detail_nota_pembelian: details.map(d => ({
         nama_ikan: d.namaIkan,
         quantity: d.quantity,
@@ -372,21 +369,29 @@ export default function PurchaseNote() {
     setNpDateRange([]);
     setNpGrpFilter(null);
     setNpSortOrder('desc');
+    setNpCurrentPage(1);
   };
 
-  // Handle expandable row change to allow only one expanded row at a time
-  const onExpand = (expanded, record) => {
-    if (expanded) {
-      setExpandedRowKeys([record.key]);
-    } else {
-      setExpandedRowKeys([]);
+  // Handle pagination and sorting changes for penerimaan barang
+  const handlePenerimaanTableChange = (pagination) => {
+    if (pagination.current !== penerimaanCurrentPage) {
+      setPenerimaanCurrentPage(pagination.current);
+    }
+    if (pagination.pageSize !== penerimaanPageSize) {
+      setPenerimaanPageSize(pagination.pageSize);
+      setPenerimaanCurrentPage(1);
     }
   };
 
-  // Show delete confirmation modal
-  const showDeleteModal = (invoice) => {
-    setInvoiceToDelete(invoice);
-    setDeleteModalVisible(true);
+  // Handle pagination and sorting changes for nota pembelian
+  const handleNpTableChange = (pagination) => {
+    if (pagination.current !== npCurrentPage) {
+      setNpCurrentPage(pagination.current);
+    }
+    if (pagination.pageSize !== npPageSize) {
+      setNpPageSize(pagination.pageSize);
+      setNpCurrentPage(1);
+    }
   };
 
   return (
@@ -398,25 +403,46 @@ export default function PurchaseNote() {
         </Button>
 
         <Title level={3}>Daftar Penerimaan Barang</Title>
-        <Space style={{ marginBottom: 16 }}>
-          <RangePicker value={dateRange} onChange={setDateRange} allowClear />
+        <Space style={{ marginBottom: 16, flexWrap: 'wrap' }}>
+          <RangePicker
+            value={dateRange}
+            onChange={dates => {
+              setDateRange(dates || []);
+              setPenerimaanCurrentPage(1);
+            }}
+            allowClear
+            style={{ minWidth: 220 }}
+          />
           <Select
             placeholder="Filter GRP"
             allowClear
-            onChange={value => setGrpFilter(value ?? null)}
+            onChange={value => {
+              setGrpFilter(value ?? null);
+              setPenerimaanCurrentPage(1);
+            }}
             style={{ width: 120 }}
             value={grpFilter}
           >
             <Select.Option value={1}>GRP</Select.Option>
             <Select.Option value={0}>Non-GRP</Select.Option>
           </Select>
-          <Select value={sortOrder} onChange={setSortOrder} style={{ width: 160 }}>
+          <Select
+            value={sortOrder}
+            onChange={val => {
+              setSortOrder(val);
+              setPenerimaanCurrentPage(1);
+            }}
+            style={{ width: 160 }}
+          >
             <Select.Option value="desc">Tanggal Terbaru</Select.Option>
             <Select.Option value="asc">Tanggal Terlama</Select.Option>
           </Select>
           <Select
             value={doneFilter}
-            onChange={val => setDoneFilter(val ?? null)}
+            onChange={val => {
+              setDoneFilter(val ?? null);
+              setPenerimaanCurrentPage(1);
+            }}
             style={{ width: 200 }}
             allowClear
             placeholder="Filter status selesai"
@@ -429,6 +455,7 @@ export default function PurchaseNote() {
           rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
           rowClassName={r => (r.usedInPurchaseNote ? 'used-row' : '')}
           columns={[
+            { title: 'No', dataIndex: 'nomor', key: 'nomor', width: 60 },
             { title: 'Nomor Penerimaan', dataIndex: 'code', key: 'code' },
             { title: 'Tanggal', dataIndex: 'date', key: 'date' },
             {
@@ -445,15 +472,28 @@ export default function PurchaseNote() {
             },
           ]}
           dataSource={penerimaanNotes}
-          pagination={{ pageSize: 10 }}
+          pagination={{
+            current: penerimaanCurrentPage,
+            pageSize: penerimaanPageSize,
+            total: penerimaanTotalItems,
+            showSizeChanger: true,
+            pageSizeOptions: ['5', '10', '25', '50'],
+          }}
+          onChange={handlePenerimaanTableChange}
           rowKey="id"
         />
 
         <Title level={4} style={{ marginTop: 24 }}>
           Ringkasan
         </Title>
-        <Table dataSource={summaryRows} columns={summaryColumns} pagination={false} rowKey="id_ikan" />
-        <Space style={{ marginTop: 16 }}>
+        <Table
+          dataSource={summaryRows}
+          columns={summaryColumns}
+          pagination={false}
+          rowKey="id_ikan"
+          locale={{ emptyText: 'Pilih minimal satu nota penerimaan' }}
+        />
+        <Space style={{ marginTop: 16, flexWrap: 'wrap' }}>
           <DatePicker value={date} onChange={setDate} />
           <Button type="primary" onClick={handleGenerateNote}>
             Buat Nota Pembelian
@@ -463,24 +503,38 @@ export default function PurchaseNote() {
         <Title level={3} style={{ marginTop: 48 }}>
           Nota Pembelian Tersimpan
         </Title>
-        <Space style={{ marginBottom: 16 }}>
+        <Space style={{ marginBottom: 16, flexWrap: 'wrap' }}>
           <RangePicker
             value={npDateRange}
-            onChange={setNpDateRange}
+            onChange={dates => {
+              setNpDateRange(dates || []);
+              setNpCurrentPage(1);
+            }}
             allowClear
             placeholder={['Tanggal Mulai', 'Tanggal Akhir']}
+            style={{ minWidth: 220 }}
           />
           <Select
             placeholder="Filter GRP"
             allowClear
-            onChange={value => setNpGrpFilter(value ?? null)}
+            onChange={value => {
+              setNpGrpFilter(value ?? null);
+              setNpCurrentPage(1);
+            }}
             style={{ width: 120 }}
             value={npGrpFilter}
           >
             <Select.Option value={1}>GRP</Select.Option>
             <Select.Option value={0}>Non-GRP</Select.Option>
           </Select>
-          <Select value={npSortOrder} onChange={setNpSortOrder} style={{ width: 160 }}>
+          <Select
+            value={npSortOrder}
+            onChange={val => {
+              setNpSortOrder(val);
+              setNpCurrentPage(1);
+            }}
+            style={{ width: 160 }}
+          >
             <Select.Option value="desc">Tanggal Terbaru</Select.Option>
             <Select.Option value="asc">Tanggal Terlama</Select.Option>
           </Select>
@@ -503,15 +557,15 @@ export default function PurchaseNote() {
             },
             {
               title: 'Total Berat (kg)',
-              dataIndex: 'totalQuantity',
-              key: 'totalQuantity',
-              render: v => v.toLocaleString(),
+              dataIndex: 'total_quantity',
+              key: 'total_quantity',
+              render: v => (typeof v === 'number' ? v.toLocaleString() : '0'),
             },
             {
               title: 'Total Harga (Rp)',
-              dataIndex: 'totalJumlah',
-              key: 'totalJumlah',
-              render: v => `Rp ${v.toLocaleString()}`,
+              dataIndex: 'total_jumlah',
+              key: 'total_jumlah',
+              render: v => (typeof v === 'number' ? `Rp ${v.toLocaleString()}` : 'Rp 0'),
             },
             {
               title: 'Aksi',
@@ -521,62 +575,93 @@ export default function PurchaseNote() {
                   <Button icon={<PrinterIcon size={16} />} onClick={() => handlePrint(r)}>
                     Cetak PDF
                   </Button>
-                  <Button danger onClick={() => showDeleteModal(r)}>
+                  <Button icon={<EyeIcon size={16} />} onClick={() => showDetailModal(r)}></Button>
+                  <Button danger onClick={() => {
+                    setInvoiceToDelete(r);
+                    setDeleteModalVisible(true);
+                  }}>
                     Delete
                   </Button>
                 </Space>
               ),
             },
           ]}
-          expandable={{
-            expandedRowRender: record => (
-              <Table
-                dataSource={record.details}
-                columns={[
-                  { title: 'Nomor Penerimaan', dataIndex: 'nomorPenerimaan', key: 'nomorPenerimaan' },
-                  { title: 'Nama Ikan', dataIndex: 'namaIkan', key: 'namaIkan' },
-                  { title: 'Kapal', dataIndex: 'namaKapal', key: 'namaKapal' },
-                  { title: 'Gudang', dataIndex: 'namaGudang', key: 'namaGudang' },
-                  { title: 'Metode Kapal', dataIndex: 'metodeKapal', key: 'metodeKapal' },
-                  { title: 'Berat (kg)', dataIndex: 'quantity', key: 'quantity' },
-                  {
-                    title: 'Harga (Rp)',
-                    dataIndex: 'harga',
-                    key: 'harga',
-                    render: v => `Rp ${v.toLocaleString()}`,
-                  },
-                  {
-                    title: 'Jumlah (Rp)',
-                    dataIndex: 'jumlah',
-                    key: 'jumlah',
-                    render: v => `Rp ${v.toLocaleString()}`,
-                  },
-                ]}
-                pagination={false}
-                rowKey="key"
-              />
-            ),
-            expandedRowKeys: expandedRowKeys,
-            onExpand: onExpand,
-          }}
           dataSource={purchaseNotes}
-          pagination={{ pageSize: 25 }}
+          pagination={{
+            current: npCurrentPage,
+            pageSize: npPageSize,
+            total: npTotalItems,
+            showSizeChanger: true,
+            pageSizeOptions: ['10', '25', '50', '100'],
+          }}
+          onChange={handleNpTableChange}
           rowKey="key"
         />
+
+        {/* Detail Modal */}
+        <Modal
+          title={`Detail Nota Pembelian: ${detailModalData?.nomor_nota || ''}`}
+          visible={detailModalVisible}
+          onCancel={() => setDetailModalVisible(false)}
+          footer={[
+            <Button key="close" onClick={() => setDetailModalVisible(false)}>
+              Tutup
+            </Button>,
+          ]}
+          width={900}
+        >
+          {detailModalData ? (
+            <Table
+              dataSource={detailModalData.details}
+              columns={[
+                { title: 'Nomor Penerimaan', dataIndex: 'nomorPenerimaan', key: 'nomorPenerimaan' },
+                { title: 'Nama Ikan', dataIndex: 'namaIkan', key: 'namaIkan' },
+                { title: 'Kapal', dataIndex: 'namaKapal', key: 'namaKapal' },
+                { title: 'Gudang', dataIndex: 'namaGudang', key: 'namaGudang' },
+                { title: 'Metode Kapal', dataIndex: 'metodeKapal', key: 'metodeKapal' },
+                {
+                  title: 'Berat (kg)',
+                  dataIndex: 'quantity',
+                  key: 'quantity',
+                  render: v => (typeof v === 'number' ? v.toLocaleString() : '0'),
+                },
+                {
+                  title: 'Harga (Rp)',
+                  dataIndex: 'harga',
+                  key: 'harga',
+                  render: v => (typeof v === 'number' ? `Rp ${v.toLocaleString()}` : 'Rp 0'),
+                },
+                {
+                  title: 'Jumlah (Rp)',
+                  dataIndex: 'jumlah',
+                  key: 'jumlah',
+                  render: v => (typeof v === 'number' ? `Rp ${v.toLocaleString()}` : 'Rp 0'),
+                },
+              ]}
+              pagination={false}
+              rowKey="key"
+              size="small"
+            />
+          ) : (
+            <p>Loading...</p>
+          )}
+        </Modal>
+
+        {/* Delete Confirmation Modal */}
+        <Modal
+          title="Konfirmasi Hapus Invoice"
+          visible={deleteModalVisible}
+          onCancel={() => setDeleteModalVisible(false)}
+          onOk={() => handleDelete(invoiceToDelete?.id)}
+          okText="Hapus"
+          okButtonProps={{ danger: true }}
+          cancelText="Batal"
+        >
+          <p>
+            Apakah Anda yakin ingin menghapus invoice <b>{invoiceToDelete?.nomor_nota}</b>?
+          </p>
+        </Modal>
       </Content>
-      <Modal
-        title="Konfirmasi Hapus Invoice"
-        open={deleteModalVisible}
-        onCancel={() => setDeleteModalVisible(false)}
-        onOk={() => handleDelete(invoiceToDelete?.id)}
-        okText="Hapus"
-        okButtonProps={{ danger: true }}
-        cancelText="Batal"
-      >
-        <p>
-          Apakah Anda yakin ingin menghapus invoice <b>{invoiceToDelete?.nomor_nota}</b>?
-        </p>
-      </Modal>
     </Layout>
   );
 }

@@ -13,9 +13,8 @@ import {
   InputNumber,
   Space,
   message,
-  Popconfirm
 } from 'antd';
-import { ArrowLeftIcon } from 'lucide-react';
+import { ArrowLeftIcon, EyeIcon } from 'lucide-react';
 import { DownloadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import Header from '../../components/Header';
@@ -45,13 +44,16 @@ export default function SalesOrder() {
   // Filters state
   const [dateRange, setDateRange] = useState([null, null]);
   const [sortOrder, setSortOrder] = useState('desc'); // 'asc' or 'desc'
-  const [sppFilter, setSppFilter] = useState('all'); // 'all', true, false
+  const [sppFilter, setSppFilter] = useState('all'); // 'all', '1', '0'
   const [filterLoading, setFilterLoading] = useState(false);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(25);
   const [totalItems, setTotalItems] = useState(0);
+
+  const [doCurrentPage, setDoCurrentPage] = useState(1);
+  const [doTotalItems, setDoTotalItems] = useState(0);
 
   const token = sessionStorage.getItem('token');
 
@@ -104,10 +106,11 @@ export default function SalesOrder() {
       if (params.date_end) query.append('date_end', params.date_end);
       if (params.sort) query.append('sort', params.sort);
       if (params.spp !== undefined && params.spp !== 'all') query.append('spp', params.spp);
-      if (params.page) query.append('page', params.page);
-      if (params.pageSize) query.append('limit', params.pageSize);
+      // Use page and limit for pagination
+      query.append('page', params.page || 1);
+      query.append('limit', params.pageSize || pageSize);
 
-      const url = `${config.API_BASE_URL}/sales_order${query.toString() ? '?' + query.toString() : ''}`;
+      const url = `${config.API_BASE_URL}/sales_order?${query.toString()}`;
       const res = await fetch(url, {
         headers: { Authorization: token }
       });
@@ -119,7 +122,8 @@ export default function SalesOrder() {
       const json = await res.json();
       if (json.status) {
         setSalesOrders(json.data);
-        setTotalItems(json.total || 0); // assuming backend returns total count in json.total
+        setTotalItems(json.total || 0); // Ensure backend returns total count in json.total
+        setCurrentPage(params.page || 1); // Sync current page state
       }
     } catch {
       message.error('Kesalahan jaringan saat ambil sales order');
@@ -333,7 +337,6 @@ export default function SalesOrder() {
 
   // Handle page change
   const onPageChange = (page) => {
-    setCurrentPage(page);
     const params = {};
     if (dateRange && dateRange[0] && dateRange[1]) {
       params.date_start = dateRange[0].format('YYYY-MM-DD');
@@ -400,7 +403,7 @@ export default function SalesOrder() {
       key: 'aksi',
       render: (_, record) => (
         <Space>
-          <Button onClick={() => showDetailModal(record)}>Detail</Button>
+          <Button icon={<EyeIcon size={16} />} onClick={() => showDetailModal(record)}></Button>
           <Button icon={<DownloadOutlined />} onClick={() => confirmCetakPDF(record)}>Cetak PDF</Button>
         </Space>
       )
@@ -532,7 +535,6 @@ export default function SalesOrder() {
           </Modal>
         </div>
       </Content>
-      <FooterSection />
     </Layout>
   );
 }
