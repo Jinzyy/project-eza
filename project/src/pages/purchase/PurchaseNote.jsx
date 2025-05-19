@@ -515,19 +515,6 @@ export default function PurchaseNote() {
             style={{ minWidth: 220 }}
           />
           <Select
-            placeholder="Filter GRP"
-            allowClear
-            onChange={value => {
-              setNpGrpFilter(value ?? null);
-              setNpCurrentPage(1);
-            }}
-            style={{ width: 120 }}
-            value={npGrpFilter}
-          >
-            <Select.Option value={1}>GRP</Select.Option>
-            <Select.Option value={0}>Non-GRP</Select.Option>
-          </Select>
-          <Select
             value={npSortOrder}
             onChange={val => {
               setNpSortOrder(val);
@@ -548,12 +535,6 @@ export default function PurchaseNote() {
               dataIndex: 'tanggal_nota',
               key: 'tanggal_nota',
               render: date => dayjs(date).format('YYYY-MM-DD'),
-            },
-            {
-              title: 'GRP',
-              dataIndex: 'grp',
-              key: 'grp',
-              render: val => (val ? <Tag color="green">GRP</Tag> : <Tag color="red">Non-GRP</Tag>),
             },
             {
               title: 'Total Berat (kg)',

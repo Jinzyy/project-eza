@@ -456,7 +456,7 @@ export default function InvoicePreview() {
       });
       if (res.data.status) {
         message.success('Invoice berhasil dihapus');
-        fetchInvoices(invoiceSortOrder, invoiceCurrentPage, invoicePageSize, invoiceIpFilter, invoiceDateRange);
+        fetchInvoices(invoiceSortOrder, invoiceCurrentPage, invoicePageSize, invoiceIpFilter, invoiceDateRange, );
         setDeleteModalVisible(false);
         setInvoiceToDelete(null);
       } else {
@@ -907,7 +907,6 @@ export default function InvoicePreview() {
               {/* Additional table for Nomor DO in invoice detail modal */}
               <Table
                 style={{ marginTop: 24 }}
-                title={() => 'Nomor DO'}
                 dataSource={selectedInvoiceDetail.nomor_do?.map((nomor, index) => ({
                   key: index,
                   nomor_do: nomor
