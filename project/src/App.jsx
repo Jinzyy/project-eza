@@ -45,9 +45,10 @@ function AuthProvider({ children }) {
   }, []);
 
   // Function to log out user
-  const logout = () => {
+  const logout = (callback) => {
     sessionStorage.removeItem('token');
     setIsAuthenticated(false);
+    if (callback) callback();
   };
 
   // Function to log in user (for completeness)

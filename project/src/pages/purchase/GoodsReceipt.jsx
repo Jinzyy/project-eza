@@ -4,7 +4,6 @@ import { ArrowLeftIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Header from '../../components/Header';
-import FooterSection from '../../components/FooterSection';
 import config from '../../config';
 
 const { Content } = Layout;

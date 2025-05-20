@@ -25,7 +25,6 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import dayjs from 'dayjs';
 import Header from '../../components/Header';
-import FooterSection from '../../components/FooterSection';
 import config from '../../config';
 
 const { Content } = Layout;
@@ -143,7 +142,7 @@ export default function InvoicePreview() {
   const fetchInvoices = async (sortOrder = 'desc', page = 1, limit = invoicePageSize, ipFilter = invoiceIpFilter, dateRange = invoiceDateRange) => {
     try {
       const token = sessionStorage.getItem('token');
-      const params = { sort: sortOrder, page, limit, cancelled:0};
+      const params = { sort: sortOrder, page, limit };
       if (ipFilter !== null) params.ip = ipFilter ? 1 : 0;
       if (dateRange.length === 2) {
         params.start_date = dateRange[0].format('YYYY-MM-DD');
@@ -259,7 +258,6 @@ export default function InvoicePreview() {
       key: 'aksi',
       render: (_, record) => (
         <Button icon={<EyeIcon size={16} />} onClick={() => showDetailModal(record)}>
-          Detail
         </Button>
       )
     }
@@ -388,7 +386,7 @@ export default function InvoicePreview() {
     } catch {
       return message.warning('Pilih tanggal invoice');
     }
-    if (!selectedRows.length) return message.warning('Pilih minimal satu DO');
+    if (!selectedRows.length && !customEnabled) return message.warning('Pilih minimal satu DO atau aktifkan custom invoice');
 
     const payload = {
       invoice: {
@@ -398,7 +396,7 @@ export default function InvoicePreview() {
         grand_total: Number(grandTotal.toFixed(2)),
         ip: invoiceData.ip
       },
-      detail_invoices: selectedRows.map(doItem => ({
+      detail_invoices: customEnabled ? [] : selectedRows.map(doItem => ({
         id_delivery_order: doItem.id_delivery_order,
         details: doItem.detail_delivery_order.map(d => ({
           id_detail_delivery_order: d.id_detail_delivery_order,
@@ -443,30 +441,6 @@ export default function InvoicePreview() {
   const showDeleteModal = invoice => {
     setInvoiceToDelete(invoice);
     setDeleteModalVisible(true);
-  };
-
-  // Confirm delete invoice
-  const confirmDeleteInvoice = async () => {
-    if (!invoiceToDelete) return;
-    try {
-      setLoading(true);
-      const token = sessionStorage.getItem('token');
-      const res = await axios.delete(`${API}/invoice/${invoiceToDelete.id_invoice}`, {
-        headers: { Authorization: token }
-      });
-      if (res.data.status) {
-        message.success('Invoice berhasil dihapus');
-        fetchInvoices(invoiceSortOrder, invoiceCurrentPage, invoicePageSize, invoiceIpFilter, invoiceDateRange, );
-        setDeleteModalVisible(false);
-        setInvoiceToDelete(null);
-      } else {
-        message.error(res.data.message);
-      }
-    } catch {
-      message.error('Gagal menghapus invoice');
-    } finally {
-      setLoading(false);
-    }
   };
 
   // Show DO detail modal
@@ -578,235 +552,172 @@ export default function InvoicePreview() {
                 <Select.Option value={10}>10 / halaman</Select.Option>
                 <Select.Option value={25}>25 / halaman</Select.Option>
                 <Select.Option value={50}>50 / halaman</Select.Option>
+                <Select.Option value={100}>100 / halaman</Select.Option>
               </Select>
               <Pagination
                 current={doCurrentPage}
                 pageSize={doPageSize}
                 total={doTotalItems}
-                onChange={page => setDoCurrentPage(page)}
+                onChange={(page, pageSize) => {
+                  setDoCurrentPage(page);
+                  setDoPageSize(pageSize);
+                }}
                 showSizeChanger={false}
               />
             </div>
-          </Card>
-
-          <Card title="Invoice Details" className="mb-6">
-            <Row gutter={16}>
-              <Col span={8}>
-                <Form.Item label="Tanggal Invoice" name="tanggal_invoice" initialValue={invoiceData.tanggal_invoice}>
-                  <DatePicker
-                    value={invoiceData.tanggal_invoice}
-                    onChange={date => setInvoiceData(d => ({ ...d, tanggal_invoice: date }))}
-                    style={{ width: '100%' }}
-                  />
-                </Form.Item>
-              </Col>
-              <Col span={8}>
-                <Form.Item label="Diskon (Rp)" name="diskon" initialValue={invoiceData.diskon}>
-                  <InputNumber
-                    min={0}
-                    value={invoiceData.diskon}
-                    onChange={value => setInvoiceData(d => ({ ...d, diskon: value || 0 }))}
-                    style={{ width: '100%' }}
-                    formatter={value => `Rp ${value?.toLocaleString('id-ID')}`}
-                    parser={value => value?.replace(/Rp\s?|(,*)/g, '')}
-                  />
-                </Form.Item>
-              </Col>
-              <Col span={8} style={{ display: 'flex', alignItems: 'center' }}>
-                <Form.Item label="PPh (0.25%)" valuePropName="checked" style={{ marginBottom: 0 }}>
-                  <Switch
-                    checked={invoiceData.ip}
-                    onChange={checked => setInvoiceData(d => ({ ...d, ip: checked }))}
-                  />
-                </Form.Item>
-              </Col>
-            </Row>
-
-            <Table
-              dataSource={customEnabled ? customInvoice : summaryData}
-              rowKey={(record, idx) => customEnabled ? idx : record.id_ikan}
-              pagination={false}
-              footer={() => (
-                <div style={{ textAlign: 'right', fontWeight: 'bold' }}>
-                  Total: {formatCurrency(total)} | Grand Total: {formatCurrency(grandTotal)}
-                </div>
-              )}
-              columns={
-                customEnabled
-                  ? [
-                      {
-                        title: 'Nama Ikan',
-                        dataIndex: 'nama_ikan',
-                        key: 'nama_ikan',
-                        render: (text, record, idx) => (
-                          <Input
-                            value={record.nama_ikan}
-                            onClick={() => openFishModal(idx)}
-                            readOnly
-                            placeholder="Pilih ikan"
-                          />
-                        )
-                      },
-                      {
-                        title: 'Netto (Kg)',
-                        dataIndex: 'netto',
-                        key: 'netto',
-                        render: (text, record, idx) => (
-                          <InputNumber
-                            min={0}
-                            value={record.netto}
-                            onChange={value => {
-                              setCustomInvoice(ci =>
-                                ci.map((r, i) => (i === idx ? { ...r, netto: value || 0 } : r))
-                              );
-                            }}
-                            style={{ width: '100%' }}
-                          />
-                        )
-                      },
-                      {
-                        title: 'Harga (Rp)',
-                        dataIndex: 'harga',
-                        key: 'harga',
-                        render: (text, record, idx) => (
-                          <InputNumber
-                            min={0}
-                            value={record.harga}
-                            onChange={value => {
-                              setCustomInvoice(ci =>
-                                ci.map((r, i) => (i === idx ? { ...r, harga: value || 0 } : r))
-                              );
-                            }}
-                            style={{ width: '100%' }}
-                            formatter={value => `Rp ${value?.toLocaleString('id-ID')}`}
-                            parser={value => value?.replace(/Rp\s?|(,*)/g, '')}
-                          />
-                        )
-                      },
-                      {
-                        title: 'Subtotal',
-                        key: 'subtotal',
-                        render: (_, record) => formatCurrency((record.netto || 0) * (record.harga || 0))
-                      },
-                      {
-                        title: 'Aksi',
-                        key: 'aksi',
-                        render: (_, __, idx) => (
-                          <Button
-                            danger
-                            onClick={() => {
-                              setCustomInvoice(ci => ci.filter((_, i) => i !== idx));
-                            }}
-                          >
-                            Hapus
-                          </Button>
-                        )
-                      }
-                    ]
-                  : [
+            <Modal
+              title={`Detail Delivery Order: ${selectedDoDetail?.nomor_do || ''}`}
+              visible={detailModalVisible}
+              onCancel={handleDetailModalClose}
+              footer={null}
+              width={600}
+            >
+              {selectedDoDetail ? (
+                <>
+                  <Descriptions bordered column={1} size="small">
+                    <Descriptions.Item label="Nomor DO">{selectedDoDetail.nomor_do}</Descriptions.Item>
+                    <Descriptions.Item label="Nomor SO">{selectedDoDetail.nomor_so}</Descriptions.Item>
+                    <Descriptions.Item label="Nama Customer">{selectedDoDetail.nama_customer}</Descriptions.Item>
+                    <Descriptions.Item label="Tanggal DO">{selectedDoDetail.tanggal_do}</Descriptions.Item>
+                    <Descriptions.Item label="Nomor Kendaraan">{selectedDoDetail.nomor_kendaraan}</Descriptions.Item>
+                    <Descriptions.Item label="Catatan">{selectedDoDetail.catatan}</Descriptions.Item>
+                    <Descriptions.Item label="Employee">{selectedDoDetail.employee_name}</Descriptions.Item>
+                  </Descriptions>
+                  <Table
+                    style={{ marginTop: 16 }}
+                    size="small"
+                    rowKey="id_detail_delivery_order"
+                    dataSource={selectedDoDetail.detail_delivery_order}
+                    pagination={false}
+                    columns={[
                       { title: 'Nama Ikan', dataIndex: 'nama_ikan', key: 'nama_ikan' },
-                      {
-                        title: 'Netto (Kg)',
-                        dataIndex: 'netto',
-                        key: 'netto',
-                        render: v => v.toFixed(2)
-                      },
-                      {
-                        title: 'Harga (Rp)',
-                        dataIndex: 'harga',
-                        key: 'harga',
-                        render: v => formatCurrency(v)
-                      },
-                      {
-                        title: 'Subtotal',
-                        key: 'subtotal',
-                        render: (_, record) => formatCurrency(record.subtotal)
-                      }
-                    ]
-              }
-            />
-            {customEnabled && (
-              <Button
-                type="dashed"
-                style={{ marginTop: 16 }}
-                onClick={() => setCustomInvoice(ci => [...ci, { id_ikan: null, nama_ikan: '', netto: 0, harga: 0 }])}
-              >
-                Tambah Baris
-              </Button>
-            )}
-            <Row justify="end" style={{ marginTop: 16 }}>
-              <Col>
-                <Button type="primary" loading={loading} onClick={submitInvoice}>
-                  Buat Invoice
-                </Button>
-              </Col>
-            </Row>
+                      { title: 'Kode Ikan', dataIndex: 'kode_ikan', key: 'kode_ikan' },
+                      { title: 'Netto First (kg)', dataIndex: 'netto_first', key: 'netto_first' },
+                      { title: 'Netto Second (kg)', dataIndex: 'netto_second', key: 'netto_second' }
+                    ]}
+                  />
+                </>
+              ) : (
+                <p>Loading...</p>
+              )}
+            </Modal>
           </Card>
-        </Form>
-
-        {/* Fish selection modal */}
-        <Modal
-          title="Pilih Ikan"
-          open={fishModal.open}
-          onCancel={() => setFishModal({ open: false, rowIdx: null })}
-          footer={null}
-        >
-          <Table
-            dataSource={fishList}
-            columns={columnsFish}
-            rowKey="id_ikan"
-            onRow={record => ({
-              onClick: () => handleFishSelect(record)
-            })}
-            pagination={false}
-            style={{ cursor: 'pointer' }}
-          />
-        </Modal>
-
-        {/* DO Detail Modal */}
-        <Modal
-          title={`Detail Delivery Order - ${selectedDoDetail?.nomor_do || ''}`}
-          open={detailModalVisible}
-          onCancel={handleDetailModalClose}
-          footer={null}
-          width={800}
-        >
-          {selectedDoDetail && (
-            <>
-              <Descriptions bordered column={1} size="small" style={{ marginBottom: 16 }}>
-                <Descriptions.Item label="Nomor DO">{selectedDoDetail.nomor_do}</Descriptions.Item>
-                <Descriptions.Item label="Tanggal DO">{selectedDoDetail.tanggal_do}</Descriptions.Item>
-                <Descriptions.Item label="SPP">
-                  <Tag color={selectedDoDetail.spp === 1 ? 'green' : 'red'}>
-                    {selectedDoDetail.spp === 1 ? 'True' : 'False'}
-                  </Tag>
-                </Descriptions.Item>
-              </Descriptions>
+          {summaryData.length > 0 && (
+            <Card
+              title="Summary"
+              className="mb-6"
+              style={{
+                filter: customEnabled ? 'blur(3px)' : 'none',
+                pointerEvents: customEnabled ? 'none' : 'auto',
+                userSelect: customEnabled ? 'none' : 'auto',
+                opacity: customEnabled ? 0.6 : 1
+              }}
+            >
               <Table
-                dataSource={selectedDoDetail.detail_delivery_order}
-                rowKey="id_detail_delivery_order"
+                rowKey="id_ikan"
+                dataSource={summaryData}
                 pagination={false}
                 columns={[
                   { title: 'Nama Ikan', dataIndex: 'nama_ikan', key: 'nama_ikan' },
-                  {
-                    title: 'Netto (Kg)',
-                    dataIndex: 'netto_second',
-                    key: 'netto_second',
-                    render: v => v.toFixed(2)
-                  }
+                  { title: 'Netto (kg)', dataIndex: 'netto', key: 'netto' },
+                  { title: 'Harga (Rp)', dataIndex: 'harga', key: 'harga', render: v => formatCurrency(v) },
+                  { title: 'Subtotal (Rp)', dataIndex: 'subtotal', key: 'subtotal', render: v => formatCurrency(v) }
                 ]}
               />
-            </>
+            </Card>
           )}
+          <Card title="Detail Invoice" className="mb-6">
+            <Row gutter={16}>
+              <Col span={8}>
+                <Form.Item
+                  name="tanggal_invoice"
+                  label="Tanggal Invoice"
+                  rules={[{ required: true, message: 'Pilih tanggal invoice' }]}
+                  initialValue={invoiceData.tanggal_invoice}
+                >
+                  <DatePicker
+                    format="YYYY-MM-DD"
+                    onChange={d => setInvoiceData(prev => ({ ...prev, tanggal_invoice: d }))}
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item label="Diskon">
+                  <InputNumber
+                    className="w-full"
+                    min={0}
+                    value={invoiceData.diskon}
+                    onChange={v => setInvoiceData(prev => ({ ...prev, diskon: v }))}
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item label="Include Pajak">
+                  <Switch
+                    checked={invoiceData.ip}
+                    onChange={v => setInvoiceData(prev => ({ ...prev, ip: v }))}
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Space size="large">
+              <div>Total: <b>{formatCurrency(total)}</b></div>
+              <div>Grand Total: <b>{formatCurrency(grandTotal)}</b></div>
+            </Space>
+          </Card>
+          <Card title="Custom Invoice Pembeli" className="mb-6">
+            <Form.Item label="Enable Custom Invoice">
+              <Switch checked={customEnabled} onChange={setCustomEnabled} />
+            </Form.Item>
+            {customEnabled && customInvoice.map((row, idx) => (
+              <Row gutter={16} key={idx} className="mb-2">
+                <Col span={6}>
+                  <Form.Item label="Nama Ikan">
+                    <Input
+                      value={row.nama_ikan}
+                      onChange={e => {
+                        const newName = e.target.value;
+                        setCustomInvoice(ci =>
+                          ci.map((r, i) => (i === idx ? { ...r, nama_ikan: newName } : r))
+                        );
+                      }}
+                    />
+                    <Button
+                      icon={<SearchIcon size={16} />}
+                      onClick={() => openFishModal(idx)}
+                      disabled={!fishList.length}
+                      className="mt-1"
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={6}>
+                  <Form.Item label="Netto (kg)">
+                    <InputNumber className="w-full" min={0} value={row.netto} onChange={v => setCustomInvoice(ci => ci.map((r,i)=>(i===idx?{...r,netto:v}:r)))} />
+                  </Form.Item>
+                </Col>
+                <Col span={6}>
+                  <Form.Item label="Harga">
+                    <InputNumber className="w-full" min={0} value={row.harga} onChange={v => setCustomInvoice(ci => ci.map((r,i)=>(i===idx?{...r,harga:v}:r)))} />
+                  </Form.Item>
+                </Col>
+                <Col span={3}>
+                  <Button danger onClick={()=>setCustomInvoice(ci=>ci.filter((_,i)=>i!==idx))}>Hapus</Button>
+                </Col>
+              </Row>
+            ))}
+            {customEnabled && <Button type="dashed" onClick={()=>setCustomInvoice(ci=>[...ci,{ id_ikan:null,nama_ikan:'',netto:0,harga:0 }])}>Tambah Baris</Button>}
+          </Card>
+          <Button type="primary" onClick={submitInvoice} loading={loading} block>Kirim Invoice</Button>
+        </Form>
+        <Modal title="Pilih Ikan" open={fishModal.open} footer={null} onCancel={()=>setFishModal({ open:false, rowIdx:null })} width={400}>
+          <Table rowKey="id_ikan" dataSource={fishList} columns={columnsFish} pagination={false} onRow={rec=>({ onClick:()=>handleFishSelect(rec) })} />
         </Modal>
-
-        {/* Invoice List Modal */}
         <Modal
           title="Daftar Invoice"
           open={invoiceModalVisible}
           onCancel={() => setInvoiceModalVisible(false)}
           footer={null}
-          width={900}
+          width={800}
         >
           <Space className="mb-4" wrap>
             <RangePicker
@@ -817,17 +728,17 @@ export default function InvoicePreview() {
               allowClear
             />
             <Select
-              placeholder="Filter PPh"
+              style={{ width: 160 }}
+              placeholder="Filter Pajak"
               allowClear
-              style={{ width: 120 }}
               onChange={value => {
                 setInvoiceIpFilter(value ?? null);
                 setInvoiceCurrentPage(1);
               }}
               value={invoiceIpFilter}
             >
-              <Select.Option value={true}>Ya</Select.Option>
-              <Select.Option value={false}>Tidak</Select.Option>
+              <Select.Option value={true}>Include Pajak</Select.Option>
+              <Select.Option value={false}>Exclude Pajak</Select.Option>
             </Select>
             <Select
               style={{ width: 160 }}
@@ -842,98 +753,117 @@ export default function InvoicePreview() {
             </Select>
           </Space>
           <Table
+            rowKey="id_invoice"
             dataSource={invoiceList}
             columns={columnsInvoice}
-            rowKey="id_invoice"
             pagination={false}
           />
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
+            <Select
+              style={{ width: 120 }}
+              value={invoicePageSize}
+              onChange={value => {
+                setInvoicePageSize(value);
+                setInvoiceCurrentPage(1);
+              }}
+            >
+              <Select.Option value={10}>10 / halaman</Select.Option>
+              <Select.Option value={25}>25 / halaman</Select.Option>
+              <Select.Option value={50}>50 / halaman</Select.Option>
+              <Select.Option value={100}>100 / halaman</Select.Option>
+            </Select>
             <Pagination
               current={invoiceCurrentPage}
               pageSize={invoicePageSize}
               total={invoiceTotalItems}
-              onChange={page => setInvoiceCurrentPage(page)}
+              onChange={(page, pageSize) => {
+                setInvoiceCurrentPage(page);
+                setInvoicePageSize(pageSize);
+              }}
               showSizeChanger={false}
             />
           </div>
         </Modal>
-
-        {/* Invoice Detail Modal */}
         <Modal
-          title={`Detail Invoice - ${selectedInvoiceDetail?.nomor_invoice || ''}`}
-          open={detailInvoiceModalVisible}
+          title={`Detail Invoice: ${selectedInvoiceDetail?.nomor_invoice || ''}`}
+          visible={detailInvoiceModalVisible}
           onCancel={handleDetailInvoiceModalClose}
           footer={null}
-          width={800}
+          width={700}
         >
           {selectedInvoiceDetail && (
             <>
-              <Descriptions bordered column={1} size="small" style={{ marginBottom: 16 }}>
-                <Descriptions.Item label="Nomor Invoice">{selectedInvoiceDetail.nomor_invoice}</Descriptions.Item>
-                <Descriptions.Item label="Tanggal Invoice">{selectedInvoiceDetail.tanggal_invoice}</Descriptions.Item>
-                <Descriptions.Item label="Nama Customer">{selectedInvoiceDetail.nama_customer}</Descriptions.Item>
-                <Descriptions.Item label="Diskon">{formatCurrency(selectedInvoiceDetail.diskon)}</Descriptions.Item>
-                <Descriptions.Item label="PPh (0.25%)">
-                  {selectedInvoiceDetail.ip === 1 ? 'Ya' : 'Tidak'}
+              <Descriptions bordered column={1} size="small">
+                <Descriptions.Item label="Nomor Invoice">
+                  {selectedInvoiceDetail.nomor_invoice}
                 </Descriptions.Item>
-                <Descriptions.Item label="Grand Total">{formatCurrency(selectedInvoiceDetail.grand_total)}</Descriptions.Item>
+                <Descriptions.Item label="Tanggal Invoice">
+                  {selectedInvoiceDetail.tanggal_invoice}
+                </Descriptions.Item>
+                <Descriptions.Item label="Nama Customer">
+                  {selectedInvoiceDetail.nama_customer}
+                </Descriptions.Item>
+                <Descriptions.Item label="Diskon">
+                  {selectedInvoiceDetail.diskon}
+                </Descriptions.Item>
+                <Descriptions.Item label="Include Pajak">
+                  {selectedInvoiceDetail.ip ? 'Ya' : 'Tidak'}
+                </Descriptions.Item>
+                <Descriptions.Item label="Grand Total">
+                  {formatCurrency(selectedInvoiceDetail.grand_total)}
+                </Descriptions.Item>
               </Descriptions>
               <Table
+                style={{ marginTop: 16 }}
+                size="small"
+                rowKey={(record, index) => record || index}
+                dataSource={selectedInvoiceDetail.nomor_do || []}
+                pagination={false}
+                columns={[
+                  { title: 'Nomor DO', dataIndex: '', key: 'nomor_do', render: text => text }
+                ]}
+              />
+              <Table
+                style={{ marginTop: 16 }}
+                size="small"
+                rowKey={(r, i) => i}
                 dataSource={selectedInvoiceDetail.detail_invoices}
-                rowKey={(record, idx) => idx}
                 pagination={false}
                 columns={[
                   { title: 'Nama Ikan', dataIndex: 'nama_ikan', key: 'nama_ikan' },
-                  {
-                    title: 'Quantity (Kg)',
-                    dataIndex: 'quantity',
-                    key: 'quantity',
-                    render: v => v.toFixed(2)
-                  },
-                  {
-                    title: 'Harga (Rp)',
-                    dataIndex: 'harga',
-                    key: 'harga',
-                    render: v => formatCurrency(v)
-                  },
-                  {
-                    title: 'Total (Rp)',
-                    dataIndex: 'total',
-                    key: 'total',
-                    render: v => formatCurrency(v)
-                  }
+                  { title: 'Quantity', dataIndex: 'quantity', key: 'quantity' },
+                  { title: 'Harga (Rp)', dataIndex: 'harga', key: 'harga', render: v => formatCurrency(v) },
+                  { title: 'Total (Rp)', dataIndex: 'total', key: 'total', render: v => formatCurrency(v) },
                 ]}
-              />
-              {/* Additional table for Nomor DO in invoice detail modal */}
-              <Table
-                style={{ marginTop: 24 }}
-                dataSource={selectedInvoiceDetail.nomor_do?.map((nomor, index) => ({
-                  key: index,
-                  nomor_do: nomor
-                })) || []}
-                columns={[
-                  { title: 'Nomor DO', dataIndex: 'nomor_do', key: 'nomor_do' }
-                ]}
-                pagination={false}
               />
             </>
           )}
         </Modal>
-
-        {/* Delete Confirmation Modal */}
         <Modal
           title="Konfirmasi Hapus Invoice"
           open={deleteModalVisible}
           onCancel={() => setDeleteModalVisible(false)}
-          onOk={confirmDeleteInvoice}
+          onOk={async () => {
+            try {
+              await axios.delete(`${config.API_BASE_URL}/invoice/${invoiceToDelete.id_invoice}`, {
+                headers: { Authorization: `Bearer ${sessionStorage.getItem("token")}` }
+              });
+              message.success("Invoice berhasil dihapus");
+              setInvoiceList(invoiceList.filter(inv => inv.id_invoice !== invoiceToDelete.id_invoice));
+            } catch (error) {
+              console.error("Gagal hapus invoice:", error);
+              message.error("Gagal menghapus invoice");
+            } finally {
+              setDeleteModalVisible(false);
+            }
+          }}
           okText="Hapus"
-          okButtonProps={{ danger: true, loading }}
+          okButtonProps={{ danger: true }}
           cancelText="Batal"
         >
-          <p>Anda yakin ingin menghapus invoice {invoiceToDelete?.nomor_invoice}?</p>
+          <p>Apakah Anda yakin ingin menghapus invoice <b>{invoiceToDelete?.nomor_invoice}</b>?</p>
         </Modal>
       </Content>
-      <FooterSection />
     </Layout>
   );
 }

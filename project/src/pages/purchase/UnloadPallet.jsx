@@ -22,7 +22,6 @@ import InputNumber from 'antd/lib/input-number';
 import { ArrowLeftIcon, PlusIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import Header from '../../components/Header';
-import FooterSection from '../../components/FooterSection';
 import config from '../../config';
 import axios from 'axios';
 
@@ -246,20 +245,26 @@ export default function UnloadPallet() {
                     {fish.pallets.map((pallet, palletIdx) => (
                       <Row gutter={8} align="middle" className="mb-3" key={palletIdx}>
                         <Col>
-                          <Select
-                              placeholder="Nomor Pallet"
-                              style={{ width: 120 }}
-                              value={pallet.palletId}
-                              onChange={val =>
-                                handlePalletChange(fishIdx, palletIdx, 'palletId', val)
-                              }
-                            >
-                              {palletOptions.map(p => (
-                                <Option key={p.id} value={p.id}>
-                                  {p.nomor}
-                                </Option>
-                              ))}
-                            </Select>
+                        <Select
+                          showSearch
+                          placeholder="Nomor Pallet"
+                          style={{ width: 120 }}
+                          value={pallet.palletId}
+                          onChange={val =>
+                            handlePalletChange(fishIdx, palletIdx, 'palletId', val)
+                          }
+                          filterOption={(input, option) =>
+                            option?.children?.toLowerCase().includes(input.toLowerCase())
+                          }
+                        >
+                          {palletOptions
+                            .filter(p => p.id != null && p.nomor) // hindari duplikat/null
+                            .map(p => (
+                              <Select.Option key={p.id} value={p.id}>
+                                {p.nomor}
+                              </Select.Option>
+                            ))}
+                        </Select>
                         </Col>
                         <Col>
                           <InputNumber
@@ -321,11 +326,23 @@ export default function UnloadPallet() {
             </div>
 
             <Modal title="Pilih Ikan" visible={showFishModal} onCancel={() => setShowFishModal(false)} footer={null}>
-              <Select placeholder="Pilih ikan" style={{ width: '100%' }} onChange={handleAddFish}>
-                {fishOptions.filter(f => !selectedFish.some(sf => sf.id === f.id)).map(f => (
-                  <Option key={f.id} value={f.id}>{f.name}</Option>
+            <Select
+              showSearch
+              placeholder="Pilih ikan"
+              style={{ width: '100%' }}
+              onChange={handleAddFish}
+              filterOption={(input, option) =>
+                option?.children?.toLowerCase().includes(input.toLowerCase())
+              }
+            >
+              {fishOptions
+                .filter(f => !selectedFish.some(sf => sf.id === f.id))
+                .map(f => (
+                  <Option key={f.id} value={f.id}>
+                    {f.name}
+                  </Option>
                 ))}
-              </Select>
+            </Select>
             </Modal>
           </div>
         </div>

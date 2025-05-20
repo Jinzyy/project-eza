@@ -28,8 +28,8 @@ const Header: React.FC = () => {
       icon: <LogOutIcon size={16} />,
       label: 'Sign out',
       onClick: () => {
-        logout();
-        navigate('/login');
+        sessionStorage.removeItem('token');
+        window.location.reload();
       },
     },
   ];

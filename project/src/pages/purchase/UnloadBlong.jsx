@@ -22,7 +22,6 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import config from '../../config';
 import Header from '../../components/Header';
-import FooterSection from '../../components/FooterSection';
 
 const { Content } = Layout;
 const { Title } = Typography;
