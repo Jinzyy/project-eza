@@ -60,8 +60,34 @@ export default function PurchaseNote() {
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [invoiceToDelete, setInvoiceToDelete] = useState(null);
 
+  const [fishPriceMap, setFishPriceMap] = useState({});
+
   const token = sessionStorage.getItem('token');
   const headers = { Authorization: token };
+
+  useEffect(() => {
+    const fetchFishPrices = async () => {
+      try {
+        const token = sessionStorage.getItem('token');
+        const headers = { Authorization: token };
+        const response = await axios.get(`${config.API_BASE_URL}/ikan`, { headers });
+        if (response.data.status && Array.isArray(response.data.data)) {
+          const priceMap = {};
+          response.data.data.forEach(fish => {
+            priceMap[fish.id_ikan] = Number(fish.harga_jual) || 0;
+          });
+          setFishPriceMap(priceMap);
+        } else {
+          message.error('Gagal mengambil data harga ikan');
+        }
+      } catch (error) {
+        console.error(error);
+        message.error('Gagal mengambil data harga ikan');
+      }
+    };
+
+    fetchFishPrices();
+  }, []);
 
   // Fetch penerimaan barang with filters and pagination
   const fetchPenerimaanBarang = async () => {
@@ -129,6 +155,8 @@ export default function PurchaseNote() {
         sort: npSortOrder,
         page: npCurrentPage,
         limit: npPageSize,
+        cancelled: 0
+
       };
 
       if (npDateRange.length === 2) {
@@ -148,7 +176,6 @@ export default function PurchaseNote() {
       if (!data.status) throw new Error('Fetch failed');
 
       const activeNotes = (data.data || [])
-        .filter(note => note.cancelled === 0)
         .map(note => {
           const details = (note.detail_nota_pembelian || []).map(d => {
             const quantity = Number(d.quantity) || 0; // Use quantity directly if available
@@ -229,9 +256,8 @@ export default function PurchaseNote() {
         <InputNumber
           min={0}
           step={1000}
-          value={priceMap[row.id_ikan]}
-          onChange={val => setPriceMap(prev => ({ ...prev, [row.id_ikan]: val }))}
-          placeholder="Harga"
+          value={fishPriceMap[row.id_ikan] || 0}
+          disabled // disable manual input to enforce automatic price
           style={{ width: 120 }}
         />
       ),
@@ -240,40 +266,55 @@ export default function PurchaseNote() {
       title: 'Total Harga (Rp)',
       key: 'totalPrice',
       render: (_, row) => {
-        const total = (Number(row.weight) || 0) * (Number(priceMap[row.id_ikan]) || 0);
-        return `Rp ${total.toLocaleString()}`;
+        const total = (Number(row.weight) || 0) * (Number(fishPriceMap[row.id_ikan]) || 0);
+        return `Rp ${total.toLocaleString('id-ID')}`;
       },
     },
   ];
 
   // Generate purchase note
-  const handleGenerateNote = () => {
-    if (!selectedRowKeys.length) return message.warning('Pilih minimal satu nota penerimaan');
-    if (summaryRows.some(r => !priceMap[r.id_ikan])) return message.warning('Masukkan harga untuk semua ikan');
-
+  const handleGenerateNote = async () => {
+    if (!selectedRowKeys.length) {
+      return message.warning('Pilih minimal satu penerimaan barang');
+    }
+  
+    // Ambil semua ikan yang ada di summaryMap (atau data yang Anda gunakan)
+    const summaryRows = Object.values(summaryMap);
+  
+    // Buat objek harga lengkap untuk semua ikan yang ada di summaryRows
+    const priceMapPayload = {};
+    summaryRows.forEach(row => {
+      // Pastikan id_ikan dan harga ada dan valid
+      if (row.id_ikan && fishPriceMap[row.id_ikan]) {
+        priceMapPayload[row.id_ikan] = fishPriceMap[row.id_ikan];
+      } else {
+        priceMapPayload[row.id_ikan] = 0; // fallback jika harga tidak ada
+      }
+    });
+  
+    // Buat payload lengkap
     const payload = {
       tanggal_nota: date.format('YYYY-MM-DD'),
-      id_penerimaan_barang: selectedRowKeys,
-      'id_ikan=harga': priceMap,
+      id_penerimaan_barang: selectedRowKeys, // array id penerimaan barang yang dipilih
+      'id_ikan=harga': priceMapPayload,
     };
-
-    axios
-      .post(`${config.API_BASE_URL}/nota_pembelian`, payload, { headers })
-      .then(({ data }) => {
-        if (data.status) {
-          message.success('Nota pembelian berhasil dibuat');
-          setSelectedRowKeys([]);
-          setPriceMap({});
-          // Refetch both penerimaan and purchase notes to update status and data
-          setPenerimaanCurrentPage(1);
-          setNpCurrentPage(1);
-          fetchPenerimaanBarang();
-          fetchPurchaseNotes();
-        } else {
-          message.error('Gagal membuat nota pembelian');
-        }
-      })
-      .catch(() => message.error('Gagal membuat nota pembelian'));
+  
+    try {
+      const response = await axios.post(`${config.API_BASE_URL}/nota_pembelian`, payload, { headers });
+  
+      if (response.data.status) {
+        message.success('Nota pembelian berhasil dibuat');
+        setSelectedRowKeys([]);
+        setPriceMap({});
+        fetchPenerimaanBarang();
+        fetchPurchaseNotes();
+      } else {
+        message.error('Gagal membuat nota pembelian');
+      }
+    } catch (error) {
+      console.error(error);
+      message.error('Terjadi kesalahan saat membuat nota pembelian');
+    }
   };
 
   // Delete invoice

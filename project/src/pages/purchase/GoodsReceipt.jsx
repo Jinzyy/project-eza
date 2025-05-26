@@ -27,9 +27,11 @@ const getTotalWeight = (items = []) =>
 const groupStockData = (items = []) => {
   const grouped = {};
   items.forEach(({ nama_ikan, berat_awal = 0, potong_susut = 0 }) => {
-    const net = berat_awal - potong_susut;
-    if (!grouped[nama_ikan]) grouped[nama_ikan] = { total_stok: 0, potong_3_container: 0, potong_collecting: 0 };
-    grouped[nama_ikan].total_stok += net;
+    if (!grouped[nama_ikan]) {
+      grouped[nama_ikan] = { total_stok: 0, potong_3_container: 0, potong_collecting: 0 };
+    }
+    // Gunakan berat_awal asli tanpa pengurangan potong_susut
+    grouped[nama_ikan].total_stok += berat_awal;
     grouped[nama_ikan].potong_3_container += potong_susut;
     grouped[nama_ikan].potong_collecting += potong_susut;
   });
@@ -118,44 +120,84 @@ export default function GoodsReceipt() {
 
   const handlePrint = (record, type) => {
     const endpoint = type === 'stock' ? 'pencatatan_stok_printer' : 'penerimaan_barang_printer';
+  
+    const fetchDetail = async (id) => {
+      const res = await axios.get(`${config.API_BASE_URL}/penerimaan_barang/${id}`, authHeader);
+      return res.data.data || res.data;
+    };
+  
+    const preparePayload = (dataDetail, type) => {
+      const items = dataDetail.detail_penerimaan_barang;
+      const payloadBase = {
+        nomor_pb: dataDetail.nomor_penerimaan_barang,
+        nama_kapal: dataDetail.nama_kapal,
+        tanggal: dataDetail.tanggal_terima,
+        nama_gudang: dataDetail.nama_gudang,
+        collecting: [dataDetail.metode_kapal],
+      };
+    
+      if (type === 'stock') {
+        // Gunakan groupStockData yang sudah tidak mengurangi potong_susut
+        const detail_stok = groupStockData(items);
+        const total_potong = items.reduce((sum, item) => sum + item.potong_susut, 0);
+        return {
+          ...payloadBase,
+          total_stok: items.reduce((sum, item) => sum + (item.berat_awal || 0), 0),
+          total_potong_3_container: total_potong,
+          total_potong_collecting: total_potong,
+          detail_stok,
+        };
+      } else {
+        // Untuk penerimaan, kurangi potong_susut saat menyiapkan qty
+        const adjustedItems = items.map(item => ({
+          ...item,
+          qty: (item.berat_awal || 0) - (item.potong_susut || 0),
+        }));
+    
+        const detail_penerimaan = groupFishData(adjustedItems);
+    
+        return {
+          ...payloadBase,
+          total_qty: adjustedItems.reduce((sum, item) => sum + (item.qty || 0), 0),
+          detail_penerimaan,
+        };
+      }
+    };
+    
+  
+    const downloadPdf = (data, filename) => {
+      const blob = new Blob([data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    };
+  
     Modal.confirm({
       title: `Konfirmasi Cetak ${type === 'stock' ? 'Stok' : 'Penerimaan'}`,
       content: `Anda yakin ingin mencetak ${type === 'stock' ? 'stok' : 'penerimaan'} ${record.nomor_penerimaan_barang}?`,
       onOk: async () => {
         try {
-          const resDetail = await axios.get(`${config.API_BASE_URL}/penerimaan_barang/${record.id_penerimaan_barang}`, authHeader);
-          const dataDetail = resDetail.data.data || resDetail.data;
-          const items = dataDetail.detail_penerimaan_barang;
-          const payloadBase = {
-            nomor_pb: dataDetail.nomor_penerimaan_barang,
-            nama_kapal: dataDetail.nama_kapal,
-            tanggal: dataDetail.tanggal_terima,
-            nama_gudang: dataDetail.nama_gudang,
-            collecting: [dataDetail.metode_kapal],
-          };
-          let payload;
-          if (type === 'stock') {
-            const detail_stok = groupStockData(items);
-            const total_potong = items.reduce((s, i) => s + i.potong_susut, 0);
-            payload = { ...payloadBase, total_stok: getTotalWeight(items), total_potong_3_container: total_potong, total_potong_collecting: total_potong, detail_stok };
-          } else {
-            const detail_penerimaan = groupFishData(items);
-            payload = { ...payloadBase, total_qty: getTotalWeight(items), detail_penerimaan };
-          }
-
+          const dataDetail = await fetchDetail(record.id_penerimaan_barang);
+          const payload = preparePayload(dataDetail, type);
+  
+          // Debug: cek payload sebelum dikirim
+          console.log('Payload untuk cetak:', payload);
+  
           const resPdf = await axios.post(
             `${config.API_BASE_URL}/${endpoint}`,
             payload,
-            { ...authHeader, headers: { ...authHeader.headers, Accept: 'application/pdf' }, responseType: 'blob' }
+            {
+              ...authHeader,
+              headers: { ...authHeader.headers, Accept: 'application/pdf' },
+              responseType: 'blob',
+            }
           );
-          const blob = new Blob([resPdf.data], { type: 'application/pdf' });
-          const url = window.URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          link.href = url;
-          link.setAttribute('download', `${type}_${record.nomor_penerimaan_barang}.pdf`);
-          document.body.appendChild(link);
-          link.click();
-          link.remove();
+  
+          downloadPdf(resPdf.data, `${type}_${record.nomor_penerimaan_barang}.pdf`);
         } catch (err) {
           message.error(`Gagal mencetak PDF ${type}`);
           console.error(err);
@@ -163,6 +205,7 @@ export default function GoodsReceipt() {
       },
     });
   };
+  
 
   const columns = [
     { title: 'No', render: (_, __, idx) => (pagination.current - 1) * pagination.pageSize + idx + 1 },

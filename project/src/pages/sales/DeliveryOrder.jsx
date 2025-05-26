@@ -48,56 +48,76 @@ export default function DeliveryOrder() {
 
   // Fetch data with date range filters, sort params, spp filter, and pagination
   const fetchData = async () => {
+    const token = sessionStorage.getItem('token');
+  
+    // 1) Fetch Sales Orders
     try {
-      const token = sessionStorage.getItem('token');
-
-      // Prepare query params for SO and DO
       const soParams = {
         ...formatDateRangeParams(soDateRange),
         ...(soSort !== 'reset' ? { sort: soSort } : {}),
         page: soPagination.current,
-        limit: soPagination.pageSize,
+        limit: soPagination.pageSize
       };
+      const soQuery = new URLSearchParams(soParams).toString();
+      const soRes = await axios.get(
+        `${API}/sales_order${soQuery ? `?${soQuery}` : ''}`,
+        { headers: { Authorization: token } }
+      );
+      if (soRes.data.status) {
+        setSalesOrders(soRes.data.data);
+        setSoPagination({
+          current: soRes.data.pagination.current_page,
+          pageSize:  soRes.data.pagination.per_page,
+          total:     soRes.data.pagination.total_items
+        });
+      }
+    } catch (err) {
+      console.error('Fetch Sales Order error:', err);
+      message.error('Gagal mengambil daftar Sales Order');
+    }
+  
+    // 2) Fetch Delivery Orders
+    try {
       const doParams = {
         ...formatDateRangeParams(doDateRange),
         ...(doSort !== 'reset' ? { sort: doSort } : {}),
         page: doPagination.current,
         limit: doPagination.pageSize,
-        ...(doSPPFilter !== null ? { spp: doSPPFilter } : {}),
+        ...(doSPPFilter != null ? { spp: doSPPFilter } : {})
       };
-
-      // Build query strings
-      const soQuery = new URLSearchParams(soParams).toString();
       const doQuery = new URLSearchParams(doParams).toString();
-
-      const [soRes, doRes, custRes] = await Promise.all([
-        axios.get(`${API}/sales_order${soQuery ? `?${soQuery}` : ''}`, { headers: { Authorization: token } }),
-        axios.get(`${API}/delivery_order${doQuery ? `?${doQuery}` : ''}`, { headers: { Authorization: token } }),
-        axios.get(`${API}/customer`, { headers: { Authorization: token } })
-      ]);
-
-      if (soRes.data.status) {
-        setSalesOrders(soRes.data.data);
-        setSoPagination(prev => ({
-          current: soRes.data.pagination?.current_page ?? prev.current,
-          pageSize: soRes.data.pagination?.per_page ?? prev.pageSize,
-          total: soRes.data.pagination?.total_items ?? soRes.data.data.length ?? 0,
-        }));
-      }
+      const doRes = await axios.get(
+        `${API}/delivery_order${doQuery ? `?${doQuery}` : ''}`,
+        { headers: { Authorization: token } }
+      );
       if (doRes.data.status) {
         setDos(doRes.data.data);
-        setDoPagination(prev => ({
-          current: doRes.data.pagination?.current_page ?? prev.current,
-          pageSize: doRes.data.pagination?.per_page ?? prev.pageSize,
-          total: doRes.data.pagination?.total_items ?? doRes.data.data.length ?? 0,
-        }));
+        setDoPagination({
+          current: doRes.data.pagination.current_page,
+          pageSize:  doRes.data.pagination.per_page,
+          total:     doRes.data.pagination.total_items
+        });
       }
-      if (custRes.data.status) setCustomers(custRes.data.data);
-    } catch (error) {
-      console.error('Fetch data error:', error);
-      message.error('Gagal mengambil data');
+    } catch (err) {
+      console.warn('Fetch Delivery Order error:', err);
+      // do nothing—DO list stays empty
+    }
+  
+    // 3) Fetch Customers
+    try {
+      const custRes = await axios.get(
+        `${API}/customer`,
+        { headers: { Authorization: token } }
+      );
+      if (custRes.data.status) {
+        setCustomers(custRes.data.data);
+      }
+    } catch (warn) {
+      console.warn('Fetch customer gagal, tapi SO/DO tetap tampil', warn);
     }
   };
+  
+  
 
   // Refetch data on mount and when date ranges, sort, spp filter, or pagination change
   useEffect(() => {

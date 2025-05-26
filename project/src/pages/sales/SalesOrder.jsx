@@ -13,12 +13,12 @@ import {
   InputNumber,
   Space,
   message,
+  Tag
 } from 'antd';
 import { ArrowLeftIcon, EyeIcon } from 'lucide-react';
 import { DownloadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import Header from '../../components/Header';
-import FooterSection from '../../components/FooterSection';
 import dayjs from 'dayjs';
 import config from '../../config';
 
@@ -29,6 +29,7 @@ const { RangePicker } = DatePicker;
 
 export default function SalesOrder() {
   const navigate = useNavigate();
+  const [form] = Form.useForm();
   const [tableData, setTableData] = useState([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -41,23 +42,23 @@ export default function SalesOrder() {
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [selectedOrderDetails, setSelectedOrderDetails] = useState(null);
 
+  // Approval state based on piutang
+  const [acc, setAcc] = useState(true);
+
   // Filters state
   const [dateRange, setDateRange] = useState([null, null]);
-  const [sortOrder, setSortOrder] = useState('desc'); // 'asc' or 'desc'
-  const [sppFilter, setSppFilter] = useState('all'); // 'all', '1', '0'
+  const [sortOrder, setSortOrder] = useState('desc');
+  const [sppFilter, setSppFilter] = useState('all');
   const [filterLoading, setFilterLoading] = useState(false);
 
-  // Pagination state
+  // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(25);
   const [totalItems, setTotalItems] = useState(0);
 
-  const [doCurrentPage, setDoCurrentPage] = useState(1);
-  const [doTotalItems, setDoTotalItems] = useState(0);
-
   const token = sessionStorage.getItem('token');
 
-  // Fetch Customers
+  // Fetch customers
   useEffect(() => {
     const fetchCustomers = async () => {
       try {
@@ -77,7 +78,7 @@ export default function SalesOrder() {
     if (token) fetchCustomers();
   }, [token]);
 
-  // Fetch Ikan
+  // Fetch ikan
   useEffect(() => {
     const fetchIkan = async () => {
       try {
@@ -97,7 +98,33 @@ export default function SalesOrder() {
     if (token) fetchIkan();
   }, [token]);
 
-  // Fetch Sales Orders with filters and pagination
+  // Check piutang via GET params when customer selected
+  const handleCustomerSelect = async (id_customer) => {
+    setAcc(true);
+    try {
+      const res = await fetch(`${config.API_BASE_URL}/piutang?customer_id=${id_customer}`, {
+        headers: { Authorization: token }
+      });
+      if (!res.ok) {
+        message.error(`Gagal cek piutang: ${res.status}`);
+        return;
+      }
+      const json = await res.json();
+      if (json.status && json.data.total_hutang > 0) {
+        Modal.warning({
+          title: 'Peringatan Hutang',
+          content: 'Customer ini memiliki utang. Sales order tidak dapat di-approve.'
+        });
+        setAcc(false);
+      } else {
+        setAcc(true);
+      }
+    } catch {
+      message.error('Kesalahan jaringan saat cek piutang');
+    }
+  };
+
+  // Fetch sales orders with acc filter
   const fetchSalesOrders = async (params = {}) => {
     setFilterLoading(true);
     try {
@@ -106,24 +133,21 @@ export default function SalesOrder() {
       if (params.date_end) query.append('date_end', params.date_end);
       if (params.sort) query.append('sort', params.sort);
       if (params.spp !== undefined && params.spp !== 'all') query.append('spp', params.spp);
-      // Use page and limit for pagination
+      query.append('acc', 1);
       query.append('page', params.page || 1);
       query.append('limit', params.pageSize || pageSize);
 
       const url = `${config.API_BASE_URL}/sales_order?${query.toString()}`;
-      const res = await fetch(url, {
-        headers: { Authorization: token }
-      });
+      const res = await fetch(url, { headers: { Authorization: token } });
       if (!res.ok) {
         message.error(`Gagal ambil sales order: ${res.status}`);
-        setFilterLoading(false);
         return;
       }
       const json = await res.json();
       if (json.status) {
         setSalesOrders(json.data);
-        setTotalItems(json.total || 0); // Ensure backend returns total count in json.total
-        setCurrentPage(params.page || 1); // Sync current page state
+        setTotalItems(json.total || 0);
+        setCurrentPage(params.page || 1);
       }
     } catch {
       message.error('Kesalahan jaringan saat ambil sales order');
@@ -132,7 +156,7 @@ export default function SalesOrder() {
     }
   };
 
-  // Initial fetch with default sort desc and page 1
+  // Initial fetch
   useEffect(() => {
     if (token) {
       fetchSalesOrders({ sort: 'desc', page: 1, pageSize });
@@ -142,7 +166,7 @@ export default function SalesOrder() {
   const openModal = () => setModalVisible(true);
   const closeModal = () => setModalVisible(false);
 
-  // Add ikan ke tabel
+  // Add ikan with harga_jual
   const handleAddIkan = (ikan) => {
     if (tableData.some(row => row.id_ikan === ikan.id_ikan)) {
       message.warning('Ikan sudah ditambahkan');
@@ -153,13 +177,13 @@ export default function SalesOrder() {
       id_ikan: ikan.id_ikan,
       nama_ikan: ikan.nama_ikan,
       berat: 0,
-      harga: 0,
+      harga: ikan.harga_jual,
       totalHarga: 0
     }]);
     closeModal();
   };
 
-  // Update data baris
+  // Update row
   const handleRowChange = (key, field, value) => {
     setTableData(prev => prev.map(row => {
       if (row.key !== key) return row;
@@ -169,12 +193,12 @@ export default function SalesOrder() {
     }));
   };
 
-  // Hapus baris
+  // Remove row
   const handleRemove = (key) => {
     setTableData(prev => prev.filter(row => row.key !== key));
   };
 
-  // Submit sales order
+  // Submit payload
   const submitSalesOrder = async (payload) => {
     try {
       setLoading(true);
@@ -186,7 +210,6 @@ export default function SalesOrder() {
         },
         body: JSON.stringify(payload)
       });
-      console.log('Payload Sales Order:', payload);
       const data = await response.json();
       setLoading(false);
       if (!response.ok) {
@@ -202,7 +225,7 @@ export default function SalesOrder() {
     }
   };
 
-  // Handle submit form
+  // Handle form submit
   const onFinish = async (values) => {
     if (!tableData.length) {
       message.warning('Tambahkan minimal satu detail ikan');
@@ -213,7 +236,8 @@ export default function SalesOrder() {
         id_customer: values.id_customer,
         spp: values.spp,
         tanggal_so: values.tanggal_so.format('YYYY-MM-DD'),
-        catatan: values.catatan || ''
+        catatan: values.catatan || '',
+        acc: acc
       },
       detail_sales_order: tableData.map(r => ({
         id_ikan: r.id_ikan,
@@ -222,7 +246,11 @@ export default function SalesOrder() {
       }))
     };
     const success = await submitSalesOrder(payload);
-    if (success) navigate('/sales/sales-order');
+    if (success) {
+      form.resetFields();
+      setTableData([]);
+      fetchSalesOrders({ sort: 'desc', page: 1, pageSize });
+    }
   };
 
   // Show detail modal
@@ -236,7 +264,7 @@ export default function SalesOrder() {
     setSelectedOrderDetails(null);
   };
 
-  // Confirm and handle Cetak PDF
+  // Confirm and print PDF
   const confirmCetakPDF = (order) => {
     Modal.confirm({
       title: 'Konfirmasi Cetak PDF',
@@ -249,7 +277,7 @@ export default function SalesOrder() {
     });
   };
 
-  // Handle Cetak PDF
+  // Print PDF
   const handleCetakPDF = async (order) => {
     const payload = {
       nama_customer: order.nama_customer,
@@ -280,7 +308,6 @@ export default function SalesOrder() {
       }
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
-      // Trigger download
       const link = document.createElement('a');
       link.href = url;
       link.download = `${order.nomor_so}.pdf`;
@@ -294,39 +321,27 @@ export default function SalesOrder() {
     }
   };
 
-  // Handle filter changes
-  const onDateRangeChange = (dates) => {
-    setDateRange(dates);
-  };
+  // Filter handlers
+  const onDateRangeChange = (dates) => setDateRange(dates);
+  const onSortOrderChange = (value) => setSortOrder(value);
+  const onSppFilterChange = (value) => setSppFilter(value);
 
-  const onSortOrderChange = (value) => {
-    setSortOrder(value);
-  };
-
-  const onSppFilterChange = (value) => {
-    setSppFilter(value);
-  };
-
-  // Apply filters with pagination reset
+  // Apply filters
   const applyFilters = () => {
     const params = {};
-    if (dateRange && dateRange[0] && dateRange[1]) {
+    if (dateRange[0] && dateRange[1]) {
       params.date_start = dateRange[0].format('YYYY-MM-DD');
       params.date_end = dateRange[1].format('YYYY-MM-DD');
     }
-    if (sortOrder) {
-      params.sort = sortOrder;
-    }
-    if (sppFilter && sppFilter !== 'all') {
-      params.spp = sppFilter;
-    }
+    if (sortOrder) params.sort = sortOrder;
+    if (sppFilter !== 'all') params.spp = sppFilter;
     params.page = 1;
     params.pageSize = pageSize;
     setCurrentPage(1);
     fetchSalesOrders(params);
   };
 
-  // Reset filters to initial state and reload
+  // Reset filters
   const resetFilters = () => {
     setDateRange([null, null]);
     setSortOrder('desc');
@@ -335,79 +350,25 @@ export default function SalesOrder() {
     fetchSalesOrders({ sort: 'desc', page: 1, pageSize });
   };
 
-  // Handle page change
+  // Page change
   const onPageChange = (page) => {
-    const params = {};
-    if (dateRange && dateRange[0] && dateRange[1]) {
+    const params = { page, pageSize };
+    if (dateRange[0] && dateRange[1]) {
       params.date_start = dateRange[0].format('YYYY-MM-DD');
       params.date_end = dateRange[1].format('YYYY-MM-DD');
     }
-    if (sortOrder) {
-      params.sort = sortOrder;
-    }
-    if (sppFilter && sppFilter !== 'all') {
-      params.spp = sppFilter;
-    }
-    params.page = page;
-    params.pageSize = pageSize;
+    if (sortOrder) params.sort = sortOrder;
+    if (sppFilter !== 'all') params.spp = sppFilter;
     fetchSalesOrders(params);
   };
 
-  // Kolom tabel detail ikan
-  const columns = [
+  // Table columns
+  const detailColumns = [
     { title: 'Nama Ikan', dataIndex: 'nama_ikan', key: 'nama_ikan' },
-    {
-      title: 'Berat (kg)',
-      dataIndex: 'berat',
-      key: 'berat',
-      render: (val, record) => (
-        <InputNumber
-          min={0}
-          value={val}
-          onChange={value => handleRowChange(record.key, 'berat', value)}
-          style={{ width: '100%' }}
-        />
-      )
-    },
-    {
-      title: 'Harga/kg',
-      dataIndex: 'harga',
-      key: 'harga',
-      render: (val, record) => (
-        <InputNumber
-          min={0}
-          value={val}
-          onChange={value => handleRowChange(record.key, 'harga', value)}
-          style={{ width: '100%' }}
-        />
-      )
-    },
-    {
-      title: 'Total Harga', dataIndex: 'totalHarga', key: 'totalHarga',
-      render: val => val.toLocaleString()
-    },
-    {
-      title: 'Aksi', key: 'aksi', render: (_, record) => (
-        <Button danger onClick={() => handleRemove(record.key)}>Hapus</Button>
-      )
-    }
-  ];
-
-  // Columns for sales order table
-  const salesOrderColumns = [
-    { title: 'Nomor SO', dataIndex: 'nomor_so', key: 'nomor_so' },
-    { title: 'Customer', dataIndex: 'nama_customer', key: 'nama_customer' },
-    { title: 'Tanggal SO', dataIndex: 'tanggal_so', key: 'tanggal_so' },
-    {
-      title: 'Aksi',
-      key: 'aksi',
-      render: (_, record) => (
-        <Space>
-          <Button icon={<EyeIcon size={16} />} onClick={() => showDetailModal(record)}></Button>
-          <Button icon={<DownloadOutlined />} onClick={() => confirmCetakPDF(record)}>Cetak PDF</Button>
-        </Space>
-      )
-    }
+    { title: 'Kode Ikan', dataIndex: 'kode_ikan', key: 'kode_ikan' },
+    { title: 'Berat (kg)', dataIndex: 'berat', key: 'berat', render: val => Number(val).toLocaleString() },
+    { title: 'Harga/kg', dataIndex: 'harga', key: 'harga', render: val => Number(val).toLocaleString() },
+    { title: 'Total Harga', key: 'total', render: (_, item) => (item.berat * item.harga).toLocaleString() },
   ];
 
   return (
@@ -418,11 +379,11 @@ export default function SalesOrder() {
           <Button icon={<ArrowLeftIcon size={16} />} onClick={() => navigate('/sales')} className="mb-6">Kembali</Button>
           <Title level={2}>Sales Order (SO)</Title>
 
-          <Form layout="vertical" onFinish={onFinish} initialValues={{ spp: false, tanggal_so: dayjs() }} className="mt-6">
+          <Form form={form} layout="vertical" onFinish={onFinish} initialValues={{ spp: false, tanggal_so: dayjs() }} className="mt-6">
             <Space direction="vertical" size="large" style={{ width: '100%' }}>
               <Space wrap>
                 <Form.Item name="id_customer" label="Customer" rules={[{ required: true }]}>
-                  <Select placeholder="Pilih Customer" style={{ minWidth: 200 }} loading={!customersLoaded} allowClear>
+                  <Select placeholder="Pilih Customer" style={{ minWidth: 200 }} loading={!customersLoaded} allowClear onChange={handleCustomerSelect}>
                     {customers.map(c => <Option key={c.id_customer} value={c.id_customer}>{c.nama_customer}</Option>)}
                   </Select>
                 </Form.Item>
@@ -436,7 +397,7 @@ export default function SalesOrder() {
 
               <Table
                 dataSource={tableData}
-                columns={columns}
+                columns={detailColumns}
                 pagination={false}
                 rowKey="key"
                 locale={{ emptyText: 'Belum ada detail ikan' }}
@@ -445,10 +406,7 @@ export default function SalesOrder() {
                   const totalHarga = pageData.reduce((sum, row) => sum + (row.totalHarga || 0), 0);
                   return (
                     <Table.Summary.Row>
-                      <Table.Summary.Cell index={0} colSpan={2} style={{ textAlign: 'right' }}>Total</Table.Summary.Cell>
-                      <Table.Summary.Cell index={2}>{totalBerat}</Table.Summary.Cell>
-                      <Table.Summary.Cell index={3}>{totalHarga.toLocaleString()}</Table.Summary.Cell>
-                      <Table.Summary.Cell index={4} />
+                      <Table.Summary.Cell index={0} colSpan={2} style={{ textAlign: 'right' }}>Total</Table.Summary.Cell><Table.Summary.Cell index={2}>{totalBerat}</Table.Summary.Cell><Table.Summary.Cell index={3}>{totalHarga.toLocaleString()}</Table.Summary.Cell><Table.Summary.Cell index={4} />
                     </Table.Summary.Row>
                   );
                 }}
@@ -459,43 +417,29 @@ export default function SalesOrder() {
             </Space>
           </Form>
 
-          {/* Filters for Sales Order List */}
           <Title level={2} style={{ marginTop: 40 }}>Daftar Sales Order</Title>
           <Space style={{ marginBottom: 16 }} wrap>
-            <RangePicker
-              value={dateRange}
-              onChange={onDateRangeChange}
-              allowClear
-              placeholder={['Tanggal Mulai', 'Tanggal Akhir']}
-            />
-            <Select value={sortOrder} onChange={onSortOrderChange} style={{ width: 150 }}>
-              <Option value="asc">Tanggal Ascending</Option>
-              <Option value="desc">Tanggal Descending</Option>
-            </Select>
-            <Select value={sppFilter} onChange={onSppFilterChange} style={{ width: 150 }}>
-              <Option value="all">Semua SPP</Option>
-              <Option value="1">SPP</Option>
-              <Option value="0">Non SPP</Option>
-            </Select>
-            <Button type="primary" onClick={applyFilters} loading={filterLoading}>Terapkan Filter</Button>
-            <Button onClick={resetFilters} disabled={filterLoading}>Reset Filter</Button>
+            <RangePicker value={dateRange} onChange={onDateRangeChange} allowClear placeholder={['Tanggal Mulai', 'Tanggal Akhir']} />
+            <Select value={sortOrder} onChange={onSortOrderChange} style={{ width: 150 }}><Option value="asc">Tanggal Ascending</Option><Option value="desc">Tanggal Descending</Option></Select>
+            <Select value={sppFilter} onChange={onSppFilterChange} style={{ width: 150 }}><Option value="all">Semua SPP</Option><Option value="1">SPP</Option><Option value="0">Non SPP</Option></Select>
+            <Button type="primary" onClick={applyFilters} loading={filterLoading}>Terapkan Filter</Button><Button onClick={resetFilters} disabled={filterLoading}>Reset Filter</Button>
           </Space>
 
           <Table
             dataSource={salesOrders}
-            columns={salesOrderColumns}
+            columns={[
+              { title: 'Nomor SO', dataIndex: 'nomor_so', key: 'nomor_so' },
+              { title: 'Customer', dataIndex: 'nama_customer', key: 'nama_customer' },
+              { title: 'Tanggal SO', dataIndex: 'tanggal_so', key: 'tanggal_so' },
+              {
+                title: 'Aksi', key: 'aksi', render: (_, record) => (<Space><Button icon={<EyeIcon size={16}/>} onClick={() => showDetailModal(record)}>Lihat Detail</Button><Button icon={<DownloadOutlined/>} onClick={() => confirmCetakPDF(record)}>Cetak PDF</Button></Space>)
+              }
+            ]}
             rowKey="id_sales_order"
-            pagination={{
-              current: currentPage,
-              pageSize: pageSize,
-              total: totalItems,
-              onChange: onPageChange,
-              showSizeChanger: false
-            }}
+            pagination={{ current: currentPage, pageSize, total: totalItems, onChange: onPageChange, showSizeChanger: false }}
             loading={filterLoading}
           />
 
-          {/* Detail Modal */}
           <Modal
             title={`Detail Sales Order: ${selectedOrderDetails?.nomor_so || ''}`}
             visible={detailModalVisible}
@@ -504,34 +448,39 @@ export default function SalesOrder() {
             width={700}
           >
             {selectedOrderDetails && (
-              <Table
-                dataSource={selectedOrderDetails.detail_sales_order}
-                columns={[
-                  { title: 'Nama Ikan', dataIndex: 'nama_ikan', key: 'nama_ikan' },
-                  { title: 'Kode Ikan', dataIndex: 'kode_ikan', key: 'kode_ikan' },
-                  { title: 'Berat (kg)', dataIndex: 'berat', key: 'berat', render: val => Number(val).toLocaleString() },
-                  { title: 'Harga/kg', dataIndex: 'harga', key: 'harga', render: val => Number(val).toLocaleString() },
-                  {
-                    title: 'Total Harga',
-                    key: 'total',
-                    render: (_, item) => (item.berat * item.harga).toLocaleString()
-                  },
-                  { title: 'Catatan', dataIndex: 'catatan', key: 'catatan', render: val => val || '-' }
-                ]}
-                pagination={true}
-                rowKey="id_detail_sales_order"
-                size="small"
-              />
+              <div>
+                <p><strong>Customer:</strong> {selectedOrderDetails.nama_customer}</p>
+                <p>
+                  <strong>SPP:</strong>{' '}
+                  <Tag color={selectedOrderDetails.spp ? 'green' : 'red'}>
+                    {selectedOrderDetails.spp ? 'Ya' : 'Tidak'}
+                  </Tag>
+                </p>
+                <p><strong>Catatan:</strong> {selectedOrderDetails.catatan || '-'}</p>
+                <Table
+                  dataSource={selectedOrderDetails.detail_sales_order}
+                  columns={detailColumns}
+                  rowKey="id_detail_sales_order"
+                  pagination={false}
+                  size="small"
+                />
+              </div>
             )}
           </Modal>
 
-          {/* Modal for adding ikan */}
-          <Modal title="Pilih Ikan" open={modalVisible} onCancel={closeModal} footer={null} width={600} destroyOnClose>
-            <Table dataSource={ikanList} loading={!ikanLoaded} columns={[
-              { title: 'Kode Ikan', dataIndex: 'kode_ikan', key: 'kode_ikan' },
-              { title: 'Nama Ikan', dataIndex: 'nama_ikan', key: 'nama_ikan' },
-              { title: 'Aksi', key: 'aksi', render: (_, ikan) => <Button type="link" onClick={() => handleAddIkan(ikan)}>Tambah</Button> }
-            ]} rowKey="id_ikan" pagination={{ pageSize: 5 }} locale={{ emptyText: ikanLoaded ? 'Data ikan tidak tersedia' : 'Memuat ikan...' }} />
+          <Modal title="Pilih Ikan" visible={modalVisible} onCancel={closeModal} footer={null} width={600} destroyOnClose>
+            <Table
+              dataSource={ikanList}
+              loading={!ikanLoaded}
+              columns={[
+                { title: 'Kode Ikan', dataIndex: 'kode_ikan', key: 'kode_ikan' },
+                { title: 'Nama Ikan', dataIndex: 'nama_ikan', key: 'nama_ikan' },
+                { title: 'Aksi', key: 'aksi', render: (_, ikan) => <Button type="link" onClick={() => handleAddIkan(ikan)}>Tambah</Button> }
+              ]}
+              rowKey="id_ikan"
+              pagination={{ pageSize: 5 }}
+              locale={{ emptyText: ikanLoaded ? 'Data ikan tidak tersedia' : 'Memuat ikan...' }}
+            />
           </Modal>
         </div>
       </Content>
