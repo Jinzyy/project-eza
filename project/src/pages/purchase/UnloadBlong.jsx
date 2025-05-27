@@ -299,17 +299,23 @@ export default function UnloadBlong() {
                       >
                         <Col>
                           <Select
+                            showSearch
                             placeholder="Nomor Pallet"
                             style={{ width: 120 }}
                             value={pallet.palletId}
                             onChange={val =>
                               handlePalletChange(fishIdx, palletIdx, 'palletId', val)
                             }
+                            filterOption={(input, option) =>
+                              option?.children?.toLowerCase().includes(input.toLowerCase())
+                            }
                           >
-                            {palletOptions.map(p => (
-                              <Option key={p.id} value={p.id}>
+                          {palletOptions
+                            .filter(p => p.id != null && p.nomor) // hindari duplikat/null
+                            .map(p => (
+                              <Select.Option key={p.id} value={p.id}>
                                 {p.nomor}
-                              </Option>
+                              </Select.Option>
                             ))}
                           </Select>
                         </Col>
