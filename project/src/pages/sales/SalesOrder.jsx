@@ -56,6 +56,8 @@ export default function SalesOrder() {
   const [pageSize] = useState(25);
   const [totalItems, setTotalItems] = useState(0);
 
+  const [ikanFilter, setIkanFilter] = useState('');
+
   const token = sessionStorage.getItem('token');
 
   // Fetch customers
@@ -383,8 +385,22 @@ export default function SalesOrder() {
             <Space direction="vertical" size="large" style={{ width: '100%' }}>
               <Space wrap>
                 <Form.Item name="id_customer" label="Customer" rules={[{ required: true }]}>
-                  <Select placeholder="Pilih Customer" style={{ minWidth: 200 }} loading={!customersLoaded} allowClear onChange={handleCustomerSelect}>
-                    {customers.map(c => <Option key={c.id_customer} value={c.id_customer}>{c.nama_customer}</Option>)}
+                  <Select
+                    showSearch                          // enable search input
+                    placeholder="Pilih Customer"
+                    style={{ minWidth: 200 }}
+                    allowClear
+                    optionFilterProp="children"       // filter by option text
+                    filterOption={(input, option) =>
+                      option.children.toLowerCase().includes(input.toLowerCase())
+                    }
+                    onChange={handleCustomerSelect}
+                  >
+                    {customers.map(c => (
+                      <Option key={c.id_customer} value={c.id_customer}>
+                        {c.nama_customer}
+                      </Option>
+                    ))}
                   </Select>
                 </Form.Item>
                 <Form.Item name="tanggal_so" label="Tanggal SO" rules={[{ required: true }]}><DatePicker /></Form.Item>
@@ -469,8 +485,18 @@ export default function SalesOrder() {
           </Modal>
 
           <Modal title="Pilih Ikan" visible={modalVisible} onCancel={closeModal} footer={null} width={600} destroyOnClose>
+            <Input.Search
+              placeholder="Cari nama ikan…"
+              allowClear
+              onSearch={setIkanFilter}
+              style={{ marginBottom: 16 }}
+            />
             <Table
-              dataSource={ikanList}
+              dataSource={
+                ikanList.filter(i =>
+                    i.nama_ikan.toLowerCase().includes(ikanFilter.toLowerCase())
+                  )
+              }
               loading={!ikanLoaded}
               columns={[
                 { title: 'Kode Ikan', dataIndex: 'kode_ikan', key: 'kode_ikan' },

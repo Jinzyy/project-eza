@@ -388,17 +388,23 @@ export default function UnloadBlong() {
             </div>
 
             <Modal
-              title="Pilih Jenis Ikan"
+              title="Pilih Ikan"
               open={showFishModal}
               onCancel={() => setShowFishModal(false)}
               footer={null}
             >
               <Select
+                showSearch
                 placeholder="Pilih jenis ikan"
                 style={{ width: '100%' }}
                 onChange={handleAddFish}
+                filterOption={(input, option) =>
+                  option?.children?.toLowerCase().includes(input.toLowerCase())
+                }
               >
-                {fishOptions.map(f => (
+              {fishOptions
+                .filter(f => !selectedFish.some(sf => sf.id === f.id))
+                .map(f => (
                   <Option key={f.id} value={f.id}>
                     {f.name}
                   </Option>
