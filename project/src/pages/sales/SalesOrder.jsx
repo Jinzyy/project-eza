@@ -387,7 +387,20 @@ export default function SalesOrder() {
   const detailColumns = [
     { title: 'Nama Ikan', dataIndex: 'nama_ikan', key: 'nama_ikan' },
     { title: 'Kode Ikan', dataIndex: 'kode_ikan', key: 'kode_ikan' },
-    { title: 'Berat (kg)', dataIndex: 'berat', key: 'berat', render: val => Number(val).toLocaleString() },
+    {
+      title: 'Berat (kg)',
+      dataIndex: 'berat',
+      key: 'berat',
+      render: (val, record) => (
+        <InputNumber
+          min={0}
+          value={val}
+          onChange={value => handleRowChange(record.key, 'berat', value)}
+          formatter={v => v?.toLocaleString()}
+          parser={v => v?.replace(/\D/g, '')}
+        />
+      ),
+    },
     { title: 'Harga/kg', dataIndex: 'harga', key: 'harga', render: val => Number(val).toLocaleString() },
     { title: 'Total Harga', key: 'total', render: (_, item) => (item.berat * item.harga).toLocaleString() },
   ];

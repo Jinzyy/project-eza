@@ -597,7 +597,7 @@ export default function PurchaseNote() {
                   <Button icon={<PrinterIcon size={16} />} onClick={() => handlePrint(r)}>
                     Cetak PDF
                   </Button>
-                  <Button icon={<EyeIcon size={16} />} onClick={() => showDetailModal(r)}></Button>
+                  <Button icon={<EyeIcon size={16} />} onClick={() => showDetailModal(r)}>Lihat Detail</Button>
                   <Button danger onClick={() => {
                     setInvoiceToDelete(r);
                     setDeleteModalVisible(true);

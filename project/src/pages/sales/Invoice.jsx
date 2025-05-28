@@ -264,7 +264,7 @@ export default function InvoicePreview() {
       key: 'aksi',
       render: (_, r) => (
         <Space>
-          <Button icon={<EyeIcon size={16} />} onClick={() => showInvoiceDetail(r)} />
+          <Button icon={<EyeIcon size={16} />} onClick={() => showInvoiceDetail(r)}>Lihat Detail</Button>
           <Button icon={<PrinterIcon size={16} />} onClick={() => showPrintConfirm(r)}>Cetak PDF</Button>
           <Button danger onClick={() => showDeleteModal(r)}>Delete</Button>
           {/* --- Tombol Payment Baru --- */}
