@@ -49,6 +49,10 @@ export default function DeliveryOrder() {
 
   const [soProcessedFilter, setSoProcessedFilter] = useState(null);
 
+  const [warningModalVisible, setWarningModalVisible] = useState(false);
+  const [pendingCustomRecord, setPendingCustomRecord] = useState(null);
+
+
   const API = config.API_BASE_URL;
 
   // Helpers
@@ -171,16 +175,14 @@ export default function DeliveryOrder() {
           >Lihat Detail</Button>
           <Button
             onClick={() => {
-              // init custom form with existing DO data
-              const items = rec.detail_delivery_order.map(d => ({
-                key: d.id_detail_delivery_order,
-                nama_ikan: d.nama_ikan,
-                harga: d.harga || 0,
-              }));
-              customForm.setFieldsValue({ items });
-              setCustomModal({ visible: true, record: rec });
+              // Tampilkan modal warning terlebih dahulu
+              setWarningModalVisible(true);
+              // Simpan record yang akan diproses agar bisa dipakai setelah konfirmasi
+              setPendingCustomRecord(rec);
             }}
-          >Custom DO</Button>
+          >
+            Custom DO
+          </Button>
         </Space>
       )
     }
@@ -373,6 +375,41 @@ export default function DeliveryOrder() {
       message.error('Gagal kirim Custom DO');
     }
   };
+
+  const handleCustomSubmit = async (values) => {
+  if (!customModal.record) return;
+
+  const token = sessionStorage.getItem('token');
+  const payload = {
+    detail_delivery_order: values.items.map(item => ({
+      id_ikan: item.id_ikan,
+      netto_first: item.netto_first,
+      netto_second: item.netto_second,
+      id_delivery_order: customModal.record.id_delivery_order,
+    })),
+  };
+
+  try {
+    setLoading(true);
+    const res = await axios.post(
+      `${API}/custom_delivery_order`,
+      payload,
+      { headers: { Authorization: token } }
+    );
+    if (res.data.status) {
+      message.success('Custom DO berhasil dikirim');
+      setCustomModal({ visible: false, record: null });
+      fetchData(); // refresh data jika perlu
+    } else {
+      message.error('Gagal mengirim Custom DO');
+    }
+  } catch (error) {
+    message.error('Terjadi kesalahan saat mengirim Custom DO');
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   return (
     <Layout className="min-h-screen">
@@ -640,38 +677,76 @@ export default function DeliveryOrder() {
         )}
       </Modal>
 
+      <Modal
+        visible={warningModalVisible}
+        title="Peringatan"
+        onCancel={() => setWarningModalVisible(false)}
+        onOk={() => {
+          // Setelah user setuju, tutup modal warning dan buka modal Custom DO
+          setWarningModalVisible(false);
+
+          if (pendingCustomRecord) {
+            // Inisialisasi form dengan data dari record yang disimpan
+            const items = pendingCustomRecord.detail_delivery_order.map(d => ({
+              key: d.id_detail_delivery_order,
+              id_ikan: d.id_ikan,
+              nama_ikan: d.nama_ikan,
+              netto_first: d.netto_first,
+              netto_second: d.netto_second || d.netto_first,
+              id_delivery_order: pendingCustomRecord.id_delivery_order,
+            }));
+            customForm.setFieldsValue({ items });
+            setCustomModal({ visible: true, record: pendingCustomRecord });
+            setPendingCustomRecord(null);
+          }
+        }}
+        okText="Lanjutkan"
+        cancelText="Batal"
+      >
+        <Typography.Text>
+          Ini bukan update Delivery Order. Apakah Anda yakin ingin melanjutkan?
+        </Typography.Text>
+      </Modal>
+
       {/* Custom DO Modal */}
       <Modal
         visible={customModal.visible}
-        title={`Custom DO: ${customModal.record?.nomor_do}`}
-        onOk={() => setConfirmCustom({ visible: true })}
+        title="Custom Delivery Order"
         onCancel={() => setCustomModal({ visible: false, record: null })}
-        okText="Lanjut"
-        cancelText="Batal"
+        onOk={() => customForm.submit()}
+        okText="Kirim"
       >
-        <Form form={customForm} layout="vertical">
+        <Form form={customForm} onFinish={handleCustomSubmit} layout="vertical">
           <Form.List name="items">
             {(fields) => (
-              fields.map(({ key, name, ...restField }) => (
-                <Space key={key} align="baseline" className="w-full mb-2">
-                  <Form.Item
-                    {...restField}
-                    name={[name, 'nama_ikan']}
-                    label="Nama Ikan"
-                    rules={[{ required: true }]}
-                  >
-                    <Input />
-                  </Form.Item>
-                  <Form.Item
-                    {...restField}
-                    name={[name, 'harga']}
-                    label="Harga"
-                    rules={[{ required: true }]}
-                  >
-                    <InputNumber formatter={val => `Rp ${val}`} />
-                  </Form.Item>
-                </Space>
-              ))
+              <>
+                {fields.map(({ key, name, ...restField }) => (
+                  <Space key={key} align="baseline" style={{ display: 'flex', marginBottom: 8 }}>
+                    <Form.Item
+                      {...restField}
+                      name={[name, 'nama_ikan']}
+                      label="Nama Ikan"
+                    >
+                      <Input disabled />
+                    </Form.Item>
+                    <Form.Item
+                      {...restField}
+                      name={[name, 'netto_first']}
+                      label="Netto First"
+                    >
+                      <InputNumber disabled />
+                    </Form.Item>
+                    <Form.Item
+                      {...restField}
+                      name={[name, 'netto_second']}
+                      label="Netto Second"
+                      rules={[{ required: true, message: 'Harap isi netto second' }]}
+                    >
+                      <InputNumber min={0} step={0.1} />
+                    </Form.Item>
+                  </Space>
+                ))}
+              </>
             )}
           </Form.List>
         </Form>

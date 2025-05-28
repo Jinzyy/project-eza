@@ -14,13 +14,14 @@ import {
   Modal,
   message,
   Space,
-  Input,
   Select,
   Descriptions,
   Tag,
-  Pagination
+  Pagination,
+  Input,
+  Progress
 } from 'antd';
-import { ArrowLeftIcon, SearchIcon, PrinterIcon, EyeIcon } from 'lucide-react';
+import { ArrowLeftIcon, PrinterIcon, EyeIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import dayjs from 'dayjs';
@@ -38,60 +39,57 @@ export default function InvoicePreview() {
   const [form] = Form.useForm();
   const navigate = useNavigate();
 
+  // --- State DO & Invoice List ---
   const [doList, setDoList] = useState([]);
   const [priceMap, setPriceMap] = useState({});
-
   const [selectedRows, setSelectedRows] = useState([]);
-  const [invoiceData, setInvoiceData] = useState({
-    tanggal_invoice: dayjs(),
-    diskon: 0,
-    ip: false
-  });
-  const [customEnabled, setCustomEnabled] = useState(false);
-  const [customInvoice, setCustomInvoice] = useState([
-    { id_ikan: null, nama_ikan: '', netto: 0, harga: 0 }
-  ]);
-  const [fishModal, setFishModal] = useState({ open: false, rowIdx: null });
 
   const [invoiceModalVisible, setInvoiceModalVisible] = useState(false);
   const [invoiceList, setInvoiceList] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
-  const [invoiceToDelete, setInvoiceToDelete] = useState(null);
-
+  // Filters / sort / pagination DO
   const [doDateRange, setDoDateRange] = useState([]);
-  const [invoiceDateRange, setInvoiceDateRange] = useState([]);
-
-  // Pagination and filters for DO
+  const [doSppFilter, setDoSppFilter] = useState(null);
+  const [doSortOrder, setDoSortOrder] = useState('desc');
   const [doPageSize, setDoPageSize] = useState(10);
   const [doCurrentPage, setDoCurrentPage] = useState(1);
   const [doTotalItems, setDoTotalItems] = useState(0);
-  const [doSppFilter, setDoSppFilter] = useState(null);
-  const [doSortOrder, setDoSortOrder] = useState('desc'); // 'desc' = latest first
 
-  // Filters and sort for invoice
+  // Filters / sort / pagination Invoice
+  const [invoiceDateRange, setInvoiceDateRange] = useState([]);
   const [invoiceIpFilter, setInvoiceIpFilter] = useState(null);
-  const [invoiceSortOrder, setInvoiceSortOrder] = useState('desc'); // 'desc' = latest first
+  const [invoiceSortOrder, setInvoiceSortOrder] = useState('desc');
   const [invoicePageSize, setInvoicePageSize] = useState(25);
   const [invoiceCurrentPage, setInvoiceCurrentPage] = useState(1);
   const [invoiceTotalItems, setInvoiceTotalItems] = useState(0);
 
+  // Detail modals
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [selectedDoDetail, setSelectedDoDetail] = useState(null);
-
   const [detailInvoiceModalVisible, setDetailInvoiceModalVisible] = useState(false);
   const [selectedInvoiceDetail, setSelectedInvoiceDetail] = useState(null);
 
+  // --- NEW: Payment Modal State ---
+  const [paymentModalVisible, setPaymentModalVisible] = useState(false);
+  const [invoiceToPay, setInvoiceToPay] = useState(null);
+  const [paymentValue, setPaymentValue] = useState(0);
+
+  // Invoice form data
+  const [invoiceData, setInvoiceData] = useState({
+    tanggal_invoice: dayjs(),
+    diskon: 0,
+    ip: false
+  });
+
   const API = config.API_BASE_URL;
 
-  // Fetch DO list with filters, sort, and pagination params
-  const fetchDOList = async (spp = null, sort = 'desc', page = 1, limit = doPageSize, dateRange = []) => {
+  // Fetch DO list
+  const fetchDOList = async (spp, sort, page, limit, dateRange) => {
     try {
       const token = sessionStorage.getItem('token');
-      const params = { page, limit };
+      const params = { page, limit, sort };
       if (spp !== null) params.spp = spp ? 1 : 0;
-      if (sort) params.sort = sort;
       if (dateRange.length === 2) {
         params.start_date = dateRange[0].format('YYYY-MM-DD');
         params.end_date = dateRange[1].format('YYYY-MM-DD');
@@ -112,7 +110,7 @@ export default function InvoicePreview() {
     }
   };
 
-  // Fetch sales order prices on mount
+  // Fetch ikan prices
   useEffect(() => {
     (async () => {
       try {
@@ -133,13 +131,13 @@ export default function InvoicePreview() {
     })();
   }, []);
 
-  // Fetch DO list on filters, sort, pagination, or date range change
+  // Re-fetch DO on filter/sort/page change
   useEffect(() => {
     fetchDOList(doSppFilter, doSortOrder, doCurrentPage, doPageSize, doDateRange);
   }, [doSppFilter, doSortOrder, doCurrentPage, doPageSize, doDateRange]);
 
-  // Fetch invoices with sort, filter, pagination, and date range parameters
-  const fetchInvoices = async (sortOrder = 'desc', page = 1, limit = invoicePageSize, ipFilter = invoiceIpFilter, dateRange = invoiceDateRange) => {
+  // Fetch invoices
+  const fetchInvoices = async (sortOrder, page, limit, ipFilter, dateRange) => {
     try {
       const token = sessionStorage.getItem('token');
       const params = { sort: sortOrder, page, limit };
@@ -164,14 +162,14 @@ export default function InvoicePreview() {
     }
   };
 
-  // Fetch invoices when modal visible or filters/sort/pagination change
+  // Re-fetch invoices when modal opens or filters change
   useEffect(() => {
     if (invoiceModalVisible) {
       fetchInvoices(invoiceSortOrder, invoiceCurrentPage, invoicePageSize, invoiceIpFilter, invoiceDateRange);
     }
   }, [invoiceModalVisible, invoiceSortOrder, invoiceCurrentPage, invoicePageSize, invoiceIpFilter, invoiceDateRange]);
 
-  // Aggregate selected DO details for summary
+  // Aggregate DO details
   const summaryData = React.useMemo(() => {
     const agg = {};
     selectedRows.forEach(doItem =>
@@ -195,40 +193,14 @@ export default function InvoicePreview() {
     return Object.values(agg);
   }, [selectedRows, priceMap]);
 
-  const total = customEnabled
-    ? customInvoice.reduce((s, c) => s + (c.harga || 0) * (c.netto || 0), 0)
-    : summaryData.reduce((s, r) => s + r.subtotal, 0);
-
-  // Grand total calculation with discount and tax
+  // Totals
+  const total = summaryData.reduce((s, r) => s + r.subtotal, 0);
   const discountedTotal = total - (invoiceData.diskon || 0);
   const grandTotal = invoiceData.ip
     ? discountedTotal - discountedTotal * 0.0025
     : discountedTotal;
 
-  const fishList = summaryData.map(r => ({
-    id_ikan: r.id_ikan,
-    nama_ikan: r.nama_ikan,
-    harga: r.harga
-  }));
-
-  const columnsFish = [
-    { title: 'Nama Ikan', dataIndex: 'nama_ikan', key: 'nama_ikan' },
-    { title: 'Harga (Rp)', dataIndex: 'harga', key: 'harga', render: v => formatCurrency(v) }
-  ];
-
-  const openFishModal = idx => setFishModal({ open: true, rowIdx: idx });
-  const handleFishSelect = rec => {
-    setCustomInvoice(ci =>
-      ci.map((r, i) =>
-        i === fishModal.rowIdx
-          ? { ...r, id_ikan: rec.id_ikan, nama_ikan: rec.nama_ikan, harga: rec.harga }
-          : r
-      )
-    );
-    setFishModal({ open: false, rowIdx: null });
-  };
-
-  // Columns for DO table with SPP tag
+  // Columns
   const columnsDO = [
     {
       title: 'No.',
@@ -257,13 +229,11 @@ export default function InvoicePreview() {
       title: 'Aksi',
       key: 'aksi',
       render: (_, record) => (
-        <Button icon={<EyeIcon size={16} />} onClick={() => showDetailModal(record)}>
-        </Button>
+        <Button icon={<EyeIcon size={16} />} onClick={() => showDetailModal(record)}>Lihat Detail </Button>
       )
     }
   ];
 
-  // Columns for invoice table inside modal
   const columnsInvoice = [
     {
       title: 'No.',
@@ -280,23 +250,63 @@ export default function InvoicePreview() {
     },
     { title: 'Grand Total', dataIndex: 'grand_total', key: 'grand_total', render: v => formatCurrency(v) },
     {
+      title: 'Progress',
+      key: 'progress',
+      render: (_, record) => {
+        const percent = record.grand_total
+          ? Math.round((record.payment_progress || 0) / record.grand_total * 100)
+          : 0;
+        return <Progress percent={percent} size="small" />;
+      }
+    },
+    {
       title: 'Aksi',
       key: 'aksi',
       render: (_, r) => (
         <Space>
-          <Button icon={<EyeIcon size={16} />} onClick={() => showInvoiceDetail(r)}></Button>
-          <Button icon={<PrinterIcon size={16} />} onClick={() => showPrintConfirm(r)}>
-            Cetak PDF
-          </Button>
-          <Button danger onClick={() => showDeleteModal(r)}>
-            Delete
+          <Button icon={<EyeIcon size={16} />} onClick={() => showInvoiceDetail(r)} />
+          <Button icon={<PrinterIcon size={16} />} onClick={() => showPrintConfirm(r)}>Cetak PDF</Button>
+          <Button danger onClick={() => showDeleteModal(r)}>Delete</Button>
+          {/* --- Tombol Payment Baru --- */}
+          <Button type="primary" onClick={() => openPaymentModal(r)}>
+            Payment
           </Button>
         </Space>
       )
     }
   ];
 
-  // Show print confirmation modal and print PDF
+  // --- Modal Handlers ---
+  const showDetailModal = doRecord => {
+    setSelectedDoDetail(doRecord);
+    setDetailModalVisible(true);
+  };
+  const handleDetailModalClose = () => {
+    setDetailModalVisible(false);
+    setSelectedDoDetail(null);
+  };
+
+  const showInvoiceDetail = invoice => {
+    // Buat source detail sama seperti sebelumya
+    const detailSource = invoice.detail_invoices.map(item => {
+      const qty = item.netto_second_total || 0;
+      const harga = item.records[0]?.harga || priceMap[item.id_ikan] || 0;
+      return {
+        nama_ikan: item.nama_ikan,
+        quantity: qty,
+        harga,
+        total: qty * harga
+      };
+    });
+    setSelectedInvoiceDetail({ ...invoice, detail_invoices: detailSource });
+    setDetailInvoiceModalVisible(true);
+  };
+  const handleDetailInvoiceModalClose = () => {
+    setSelectedInvoiceDetail(null);
+    setDetailInvoiceModalVisible(false);
+  };
+
+  // Print
   const showPrintConfirm = invoice => {
     confirm({
       title: 'Cetak Nota',
@@ -327,41 +337,22 @@ export default function InvoicePreview() {
     });
   };
 
-  // Format payload for printing invoice
+  // Format payload print (tidak berubah)
   const formatNotaPayload = invoice => {
-    const useCustom = Array.isArray(invoice.custom_invoices) && invoice.custom_invoices.length > 0;
-
-    const detail_invoices = (useCustom
-      ? invoice.custom_invoices.map(c => {
-          const qty = c.netto_total || 0;
-          const harga = c.records[0]?.harga ?? 0;
-          return {
-            nama_ikan: c.nama_ikan,
-            quantity: qty,
-            harga: harga,
-            total: qty * harga
-          };
-        })
-      : invoice.detail_invoices.map(item => {
-          const qty = item.netto_second_total || 0;
-          const harga = item.records[0]?.harga ?? (priceMap[item.id_ikan] || 0);
-          return {
-            nama_ikan: item.nama_ikan,
-            quantity: qty,
-            harga: harga,
-            total: qty * harga
-          };
-        })
-    );
-
+    const detail_invoices = invoice.detail_invoices.map(item => {
+      const qty = item.netto_second_total || 0;
+      const harga = item.records[0]?.harga || priceMap[item.id_ikan] || 0;
+      return {
+        nama_ikan: item.nama_ikan,
+        quantity: qty,
+        harga: harga,
+        total: qty * harga
+      };
+    });
     const quantity_total = detail_invoices.reduce((s, d) => s + d.quantity, 0);
     const total_dpp = detail_invoices.reduce((s, d) => s + d.total, 0);
     const diskon = invoice.diskon || 0;
-
-    const pph = invoice.ip === 1
-      ? Number((total_dpp * 0.0025).toFixed(2))
-      : 0;
-
+    const pph = invoice.ip === 1 ? Number((total_dpp * 0.0025).toFixed(2)) : 0;
     const grand_total = invoice.ip === 1
       ? Number((total_dpp - diskon - pph).toFixed(2))
       : Number((total_dpp - diskon).toFixed(2));
@@ -379,39 +370,35 @@ export default function InvoicePreview() {
     };
   };
 
-  // Submit invoice creation
+  // Submit Invoice (tanpa custom_invoice)
   const submitInvoice = async () => {
+    // validasi tanggal
     try {
       await form.validateFields(['tanggal_invoice']);
     } catch {
       return message.warning('Pilih tanggal invoice');
     }
-    if (!selectedRows.length && !customEnabled) return message.warning('Pilih minimal satu DO atau aktifkan custom invoice');
+    if (!selectedRows.length) {
+      return message.warning('Pilih minimal satu DO');
+    }
 
+    // hitung total dan grand total (sudah ada di state)
     const payload = {
       invoice: {
         tanggal_invoice: invoiceData.tanggal_invoice.format('YYYY-MM-DD'),
         diskon: Number(invoiceData.diskon.toFixed(2)),
         total: Number(total.toFixed(2)),
         grand_total: Number(grandTotal.toFixed(2)),
-        ip: invoiceData.ip
+        ip: invoiceData.ip ? 1 : 0
       },
-      detail_invoices: customEnabled ? [] : selectedRows.map(doItem => ({
+      detail_invoices: selectedRows.map(doItem => ({
         id_delivery_order: doItem.id_delivery_order,
         details: doItem.detail_delivery_order.map(d => ({
-          id_detail_delivery_order: d.id_detail_delivery_order,
+          id_ikan: d.id_ikan,
+          netto: d.netto_second || d.netto_first || 0,
           harga: Number((priceMap[d.id_ikan] || 0).toFixed(2))
         }))
-      })),
-      custom_invoice: customEnabled
-        ? customInvoice
-            .filter(c => c.id_ikan)
-            .map(c => ({
-              nama_ikan: c.nama_ikan,
-              netto: Number(c.netto),
-              harga: Number(c.harga.toFixed(2))
-            }))
-        : []
+      }))
     };
 
     try {
@@ -422,11 +409,10 @@ export default function InvoicePreview() {
       });
       if (res.data.status) {
         message.success('Invoice berhasil dikirim');
+        // refresh daftar invoice
         fetchInvoices(invoiceSortOrder, invoiceCurrentPage, invoicePageSize, invoiceIpFilter, invoiceDateRange);
         form.resetFields();
         setSelectedRows([]);
-        setCustomInvoice([{ id_ikan: null, nama_ikan: '', netto: 0, harga: 0 }]);
-        setCustomEnabled(false);
         setInvoiceModalVisible(false);
         navigate('/sales/invoice');
       } else {
@@ -437,52 +423,13 @@ export default function InvoicePreview() {
     }
   };
 
-  // Show delete confirmation modal
+
+  // Delete Invoice
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [invoiceToDelete, setInvoiceToDelete] = useState(null);
   const showDeleteModal = invoice => {
     setInvoiceToDelete(invoice);
     setDeleteModalVisible(true);
-  };
-
-  // Show DO detail modal
-  const showDetailModal = doRecord => {
-    setSelectedDoDetail(doRecord);
-    setDetailModalVisible(true);
-  };
-
-  const handleDetailModalClose = () => {
-    setDetailModalVisible(false);
-    setSelectedDoDetail(null);
-  };
-
-  // Show invoice detail modal
-  const showInvoiceDetail = invoice => {
-    const useCustom = Array.isArray(invoice.custom_invoices) && invoice.custom_invoices.length > 0;
-    const detailSource = (useCustom
-      ? invoice.custom_invoices.map(c => ({
-          nama_ikan: c.nama_ikan,
-          quantity: c.netto_total,
-          harga: c.records[0].harga,
-          total: c.netto_total * c.records[0].harga
-        }))
-      : invoice.detail_invoices.map(item => {
-          const qty = item.netto_second_total || 0;
-          const harga = item.records[0].harga || priceMap[item.id_ikan] || 0;
-          return {
-            nama_ikan: item.nama_ikan,
-            quantity: qty,
-            harga,
-            total: qty * harga
-          };
-        })
-    );
-
-    setSelectedInvoiceDetail({ ...invoice, detail_invoices: detailSource });
-    setDetailInvoiceModalVisible(true);
-  };
-
-  const handleDetailInvoiceModalClose = () => {
-    setSelectedInvoiceDetail(null);
-    setDetailInvoiceModalVisible(false);
   };
 
   return (
@@ -495,24 +442,19 @@ export default function InvoicePreview() {
         </Space>
         <Title level={2}>Invoice Preview</Title>
         <Form form={form} layout="vertical">
+          {/* Pilih DO */}
           <Card title="Pilih Delivery Orders" className="mb-6">
             <Space className="mb-4" wrap>
               <RangePicker
-                onChange={vals => {
-                  setDoDateRange(vals || []);
-                  setDoCurrentPage(1);
-                }}
+                onChange={vals => { setDoDateRange(vals || []); setDoCurrentPage(1); }}
                 allowClear
               />
               <Select
                 placeholder="Filter SPP"
                 allowClear
                 style={{ width: 120 }}
-                onChange={value => {
-                  setDoSppFilter(value ?? null);
-                  setDoCurrentPage(1);
-                }}
                 value={doSppFilter}
+                onChange={v => { setDoSppFilter(v ?? null); setDoCurrentPage(1); }}
               >
                 <Select.Option value={true}>Ya</Select.Option>
                 <Select.Option value={false}>Tidak</Select.Option>
@@ -520,10 +462,7 @@ export default function InvoicePreview() {
               <Select
                 style={{ width: 160 }}
                 value={doSortOrder}
-                onChange={value => {
-                  setDoSortOrder(value);
-                  setDoCurrentPage(1);
-                }}
+                onChange={v => { setDoSortOrder(v); setDoCurrentPage(1); }}
               >
                 <Select.Option value="desc">Tanggal Terbaru</Select.Option>
                 <Select.Option value="asc">Tanggal Terlama</Select.Option>
@@ -536,32 +475,24 @@ export default function InvoicePreview() {
               pagination={false}
               rowSelection={{
                 selectedRowKeys: selectedRows.map(r => r.id_delivery_order),
-                onChange: (_, rows) => setSelectedRows(rows),
-                getCheckboxProps: () => ({ disabled: customEnabled })
+                onChange: (_, rows) => setSelectedRows(rows)
               }}
             />
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16 }}>
               <Select
                 style={{ width: 120 }}
                 value={doPageSize}
-                onChange={value => {
-                  setDoPageSize(value);
-                  setDoCurrentPage(1);
-                }}
+                onChange={v => { setDoPageSize(v); setDoCurrentPage(1); }}
               >
-                <Select.Option value={10}>10 / halaman</Select.Option>
-                <Select.Option value={25}>25 / halaman</Select.Option>
-                <Select.Option value={50}>50 / halaman</Select.Option>
-                <Select.Option value={100}>100 / halaman</Select.Option>
+                {[10, 25, 50, 100].map(n => (
+                  <Select.Option key={n} value={n}>{n} / halaman</Select.Option>
+                ))}
               </Select>
               <Pagination
                 current={doCurrentPage}
                 pageSize={doPageSize}
                 total={doTotalItems}
-                onChange={(page, pageSize) => {
-                  setDoCurrentPage(page);
-                  setDoPageSize(pageSize);
-                }}
+                onChange={(p, ps) => { setDoCurrentPage(p); setDoPageSize(ps); }}
                 showSizeChanger={false}
               />
             </div>
@@ -572,7 +503,7 @@ export default function InvoicePreview() {
               footer={null}
               width={600}
             >
-              {selectedDoDetail ? (
+              {selectedDoDetail && (
                 <>
                   <Descriptions bordered column={1} size="small">
                     <Descriptions.Item label="Nomor DO">{selectedDoDetail.nomor_do}</Descriptions.Item>
@@ -597,22 +528,13 @@ export default function InvoicePreview() {
                     ]}
                   />
                 </>
-              ) : (
-                <p>Loading...</p>
               )}
             </Modal>
           </Card>
+
+          {/* Summary */}
           {summaryData.length > 0 && (
-            <Card
-              title="Summary"
-              className="mb-6"
-              style={{
-                filter: customEnabled ? 'blur(3px)' : 'none',
-                pointerEvents: customEnabled ? 'none' : 'auto',
-                userSelect: customEnabled ? 'none' : 'auto',
-                opacity: customEnabled ? 0.6 : 1
-              }}
-            >
+            <Card title="Summary" className="mb-6">
               <Table
                 rowKey="id_ikan"
                 dataSource={summaryData}
@@ -626,6 +548,8 @@ export default function InvoicePreview() {
               />
             </Card>
           )}
+
+          {/* Detail Invoice */}
           <Card title="Detail Invoice" className="mb-6">
             <Row gutter={16}>
               <Col span={8}>
@@ -665,77 +589,31 @@ export default function InvoicePreview() {
               <div>Grand Total: <b>{formatCurrency(grandTotal)}</b></div>
             </Space>
           </Card>
-          <Card title="Custom Invoice Pembeli" className="mb-6">
-            <Form.Item label="Enable Custom Invoice">
-              <Switch checked={customEnabled} onChange={setCustomEnabled} />
-            </Form.Item>
-            {customEnabled && customInvoice.map((row, idx) => (
-              <Row gutter={16} key={idx} className="mb-2">
-                <Col span={6}>
-                  <Form.Item label="Nama Ikan">
-                    <Input
-                      value={row.nama_ikan}
-                      onChange={e => {
-                        const newName = e.target.value;
-                        setCustomInvoice(ci =>
-                          ci.map((r, i) => (i === idx ? { ...r, nama_ikan: newName } : r))
-                        );
-                      }}
-                    />
-                    <Button
-                      icon={<SearchIcon size={16} />}
-                      onClick={() => openFishModal(idx)}
-                      disabled={!fishList.length}
-                      className="mt-1"
-                    />
-                  </Form.Item>
-                </Col>
-                <Col span={6}>
-                  <Form.Item label="Netto (kg)">
-                    <InputNumber className="w-full" min={0} value={row.netto} onChange={v => setCustomInvoice(ci => ci.map((r,i)=>(i===idx?{...r,netto:v}:r)))} />
-                  </Form.Item>
-                </Col>
-                <Col span={6}>
-                  <Form.Item label="Harga">
-                    <InputNumber className="w-full" min={0} value={row.harga} onChange={v => setCustomInvoice(ci => ci.map((r,i)=>(i===idx?{...r,harga:v}:r)))} />
-                  </Form.Item>
-                </Col>
-                <Col span={3}>
-                  <Button danger onClick={()=>setCustomInvoice(ci=>ci.filter((_,i)=>i!==idx))}>Hapus</Button>
-                </Col>
-              </Row>
-            ))}
-            {customEnabled && <Button type="dashed" onClick={()=>setCustomInvoice(ci=>[...ci,{ id_ikan:null,nama_ikan:'',netto:0,harga:0 }])}>Tambah Baris</Button>}
-          </Card>
-          <Button type="primary" onClick={submitInvoice} loading={loading} block>Kirim Invoice</Button>
+
+          <Button type="primary" onClick={submitInvoice} loading={loading} block>
+            Kirim Invoice
+          </Button>
         </Form>
-        <Modal title="Pilih Ikan" open={fishModal.open} footer={null} onCancel={()=>setFishModal({ open:false, rowIdx:null })} width={400}>
-          <Table rowKey="id_ikan" dataSource={fishList} columns={columnsFish} pagination={false} onRow={rec=>({ onClick:()=>handleFishSelect(rec) })} />
-        </Modal>
+
+        {/* Daftar Invoice Modal */}
         <Modal
           title="Daftar Invoice"
           open={invoiceModalVisible}
           onCancel={() => setInvoiceModalVisible(false)}
           footer={null}
-          width={800}
+          width={1000}
         >
           <Space className="mb-4" wrap>
             <RangePicker
-              onChange={vals => {
-                setInvoiceDateRange(vals || []);
-                setInvoiceCurrentPage(1);
-              }}
+              onChange={vals => { setInvoiceDateRange(vals || []); setInvoiceCurrentPage(1); }}
               allowClear
             />
             <Select
               style={{ width: 160 }}
               placeholder="Filter Pajak"
               allowClear
-              onChange={value => {
-                setInvoiceIpFilter(value ?? null);
-                setInvoiceCurrentPage(1);
-              }}
               value={invoiceIpFilter}
+              onChange={v => { setInvoiceIpFilter(v ?? null); setInvoiceCurrentPage(1); }}
             >
               <Select.Option value={true}>Include Pajak</Select.Option>
               <Select.Option value={false}>Exclude Pajak</Select.Option>
@@ -743,10 +621,7 @@ export default function InvoicePreview() {
             <Select
               style={{ width: 160 }}
               value={invoiceSortOrder}
-              onChange={value => {
-                setInvoiceSortOrder(value);
-                setInvoiceCurrentPage(1);
-              }}
+              onChange={v => { setInvoiceSortOrder(v); setInvoiceCurrentPage(1); }}
             >
               <Select.Option value="desc">Tanggal Terbaru</Select.Option>
               <Select.Option value="asc">Tanggal Terlama</Select.Option>
@@ -758,32 +633,27 @@ export default function InvoicePreview() {
             columns={columnsInvoice}
             pagination={false}
           />
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16 }}>
             <Select
               style={{ width: 120 }}
               value={invoicePageSize}
-              onChange={value => {
-                setInvoicePageSize(value);
-                setInvoiceCurrentPage(1);
-              }}
+              onChange={v => { setInvoicePageSize(v); setInvoiceCurrentPage(1); }}
             >
-              <Select.Option value={10}>10 / halaman</Select.Option>
-              <Select.Option value={25}>25 / halaman</Select.Option>
-              <Select.Option value={50}>50 / halaman</Select.Option>
-              <Select.Option value={100}>100 / halaman</Select.Option>
+              {[10, 25, 50, 100].map(n => (
+                <Select.Option key={n} value={n}>{n} / halaman</Select.Option>
+              ))}
             </Select>
             <Pagination
               current={invoiceCurrentPage}
               pageSize={invoicePageSize}
               total={invoiceTotalItems}
-              onChange={(page, pageSize) => {
-                setInvoiceCurrentPage(page);
-                setInvoicePageSize(pageSize);
-              }}
+              onChange={(p, ps) => { setInvoiceCurrentPage(p); setInvoicePageSize(ps); }}
               showSizeChanger={false}
             />
           </div>
         </Modal>
+
+        {/* Detail Invoice Modal */}
         <Modal
           title={`Detail Invoice: ${selectedInvoiceDetail?.nomor_invoice || ''}`}
           visible={detailInvoiceModalVisible}
@@ -816,16 +686,6 @@ export default function InvoicePreview() {
               <Table
                 style={{ marginTop: 16 }}
                 size="small"
-                rowKey={(record, index) => record || index}
-                dataSource={selectedInvoiceDetail.nomor_do || []}
-                pagination={false}
-                columns={[
-                  { title: 'Nomor DO', dataIndex: '', key: 'nomor_do', render: text => text }
-                ]}
-              />
-              <Table
-                style={{ marginTop: 16 }}
-                size="small"
                 rowKey={(r, i) => i}
                 dataSource={selectedInvoiceDetail.detail_invoices}
                 pagination={false}
@@ -839,6 +699,8 @@ export default function InvoicePreview() {
             </>
           )}
         </Modal>
+
+        {/* Konfirmasi Hapus Invoice */}
         <Modal
           title="Konfirmasi Hapus Invoice"
           open={deleteModalVisible}
@@ -850,8 +712,7 @@ export default function InvoicePreview() {
               });
               message.success("Invoice berhasil dihapus");
               setInvoiceList(invoiceList.filter(inv => inv.id_invoice !== invoiceToDelete.id_invoice));
-            } catch (error) {
-              console.error("Gagal hapus invoice:", error);
+            } catch {
               message.error("Gagal menghapus invoice");
             } finally {
               setDeleteModalVisible(false);
@@ -863,7 +724,58 @@ export default function InvoicePreview() {
         >
           <p>Apakah Anda yakin ingin menghapus invoice <b>{invoiceToDelete?.nomor_invoice}</b>?</p>
         </Modal>
+
+        {/* --- Modal Payment Baru --- */}
+        <Modal
+          title={`Payment Invoice: ${invoiceToPay?.nomor_invoice || ''}`}
+          open={paymentModalVisible}
+          onCancel={() => setPaymentModalVisible(false)}
+          okText="Simpan"
+          onOk={async () => {
+            try {
+              await axios.put(
+                `${API}/invoice/${invoiceToPay.id_invoice}`,
+                { payment: Number(paymentValue) },
+                { headers: { Authorization: sessionStorage.getItem('token') } }
+              );
+              message.success('Payment berhasil disimpan');
+              // refresh daftar invoice
+              fetchInvoices(invoiceSortOrder, invoiceCurrentPage, invoicePageSize, invoiceIpFilter, invoiceDateRange);
+            } catch {
+              message.error('Gagal menyimpan payment');
+            } finally {
+              setPaymentModalVisible(false);
+              setPaymentValue(0);
+              setInvoiceToPay(null);
+            }
+          }}
+        >
+          {invoiceToPay && (
+            <p>
+              Sisa pembayaran:{' '}
+              <b>
+                {formatCurrency(
+                  invoiceToPay.grand_total - (invoiceToPay.payment_progress || 0)
+                )}
+              </b>
+            </p>
+          )}
+          <InputNumber
+            style={{ width: '100%' }}
+            min={0}
+            value={paymentValue}
+            onChange={v => setPaymentValue(v || 0)}
+            placeholder="Masukkan nominal pembayaran"
+          />
+        </Modal>
       </Content>
     </Layout>
   );
+
+  // Fungsi untuk membuka payment modal
+  function openPaymentModal(invoice) {
+    setInvoiceToPay(invoice);
+    setPaymentValue(invoice.payment || 0);
+    setPaymentModalVisible(true);
+  }
 }

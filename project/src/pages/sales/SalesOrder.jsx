@@ -111,12 +111,29 @@ export default function SalesOrder() {
         message.error(`Gagal cek piutang: ${res.status}`);
         return;
       }
+  
       const json = await res.json();
-      if (json.status && json.data.total_hutang > 0) {
+  
+      if (json.status && json.data.length > 0) {
+        const totalHutang = json.data.reduce((sum, item) => sum + item.sisa_hutang, 0);
+  
         Modal.warning({
           title: 'Peringatan Hutang',
-          content: 'Customer ini memiliki utang. Sales order tidak dapat di-approve.'
+          content: (
+            <>
+              <p>Customer ini masih memiliki hutang sebesar <b>Rp {totalHutang.toLocaleString('id-ID')}</b>.</p>
+              <ul>
+                {json.data.map((item) => (
+                  <li key={item.id_invoice}>
+                    {item.nomor_invoice} - Rp {item.sisa_hutang.toLocaleString('id-ID')}
+                  </li>
+                ))}
+              </ul>
+              <p>Sales order tidak dapat di-approve secara otomatis. Silahkan hubungi admin</p>
+            </>
+          ),
         });
+  
         setAcc(false);
       } else {
         setAcc(true);
@@ -125,6 +142,7 @@ export default function SalesOrder() {
       message.error('Kesalahan jaringan saat cek piutang');
     }
   };
+  
 
   // Fetch sales orders with acc filter
   const fetchSalesOrders = async (params = {}) => {
@@ -136,6 +154,7 @@ export default function SalesOrder() {
       if (params.sort) query.append('sort', params.sort);
       if (params.spp !== undefined && params.spp !== 'all') query.append('spp', params.spp);
       query.append('acc', 1);
+      query.append('is_delete', 0)
       query.append('page', params.page || 1);
       query.append('limit', params.pageSize || pageSize);
 
