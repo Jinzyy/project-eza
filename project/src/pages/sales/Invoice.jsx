@@ -75,6 +75,8 @@ export default function InvoicePreview() {
   const [invoiceToPay, setInvoiceToPay] = useState(null);
   const [paymentValue, setPaymentValue] = useState(0);
 
+  const [summaryAdjustments, setSummaryAdjustments] = useState({});
+
   // Invoice form data
   const [invoiceData, setInvoiceData] = useState({
     tanggal_invoice: dayjs(),
@@ -432,6 +434,15 @@ export default function InvoicePreview() {
     setDeleteModalVisible(true);
   };
 
+  useEffect(() => {
+    const totalRowDiscount = Object.values(summaryAdjustments)
+      .reduce((sum, adj) => sum + (adj.diskon || 0), 0);
+    setInvoiceData(prev => ({
+      ...prev,
+      diskon: totalRowDiscount
+    }));
+  }, [summaryAdjustments]);
+
   return (
     <Layout className="min-h-screen">
       <Header />
@@ -540,10 +551,76 @@ export default function InvoicePreview() {
                 dataSource={summaryData}
                 pagination={false}
                 columns={[
-                  { title: 'Nama Ikan', dataIndex: 'nama_ikan', key: 'nama_ikan' },
-                  { title: 'Netto (kg)', dataIndex: 'netto', key: 'netto' },
-                  { title: 'Harga (Rp)', dataIndex: 'harga', key: 'harga', render: v => formatCurrency(v) },
-                  { title: 'Subtotal (Rp)', dataIndex: 'subtotal', key: 'subtotal', render: v => formatCurrency(v) }
+                  {
+                    title: 'Nama Ikan',
+                    dataIndex: 'nama_ikan',
+                    key: 'nama_ikan'
+                  },
+                  {
+                    title: 'Netto (kg)',
+                    dataIndex: 'netto',
+                    key: 'netto'
+                  },
+                  {
+                    title: 'Diskon Berat (kg)',
+                    key: 'diskonBerat',
+                    render: (_, record) => {
+                      const adj = summaryAdjustments[record.id_ikan] || {};
+                      return (
+                        <InputNumber
+                          min={0}
+                          style={{ width: 100 }}
+                          value={adj.diskonBerat || 0}
+                          onChange={val => {
+                            const diskonVal = (val || 0) * record.harga;
+                            setSummaryAdjustments(prev => ({
+                              ...prev,
+                              [record.id_ikan]: {
+                                ...prev[record.id_ikan],
+                                diskonBerat: val || 0,
+                                diskon: diskonVal
+                              }
+                            }));
+                          }}
+                        />
+                      );
+                    }
+                  },
+                  {
+                    title: 'Harga (Rp)',
+                    dataIndex: 'harga',
+                    key: 'harga',
+                    render: v => formatCurrency(v)
+                  },
+                  // {
+                  //   title: 'Diskon (Rp)',
+                  //   key: 'diskon',
+                  //   render: (_, record) => {
+                  //     const adj = summaryAdjustments[record.id_ikan] || {};
+                  //     return (
+                  //       <InputNumber
+                  //         min={0}
+                  //         style={{ width: 120 }}
+                  //         value={adj.diskon || 0}
+                  //         onChange={val => {
+                  //           setSummaryAdjustments(prev => ({
+                  //             ...prev,
+                  //             [record.id_ikan]: {
+                  //               ...prev[record.id_ikan],
+                  //               diskon: val || 0
+                  //             }
+                  //           }));
+                  //         }}
+                  //       />
+                  //     );
+                  //   }
+                  // },
+                  {
+                    title: 'Subtotal (Rp)',
+                    dataIndex: 'subtotal',
+                    key: 'subtotal',
+                    render: v => formatCurrency(v)
+                  }
                 ]}
               />
             </Card>
@@ -589,6 +666,7 @@ export default function InvoicePreview() {
               <div>Grand Total: <b>{formatCurrency(grandTotal)}</b></div>
             </Space>
           </Card>
+
 
           <Button type="primary" onClick={submitInvoice} loading={loading} block>
             Kirim Invoice

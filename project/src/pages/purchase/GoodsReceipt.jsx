@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Layout, Typography, Button, Table, Modal, message, DatePicker, Select, Spin, Tag } from 'antd';
+import { Layout, Typography, Button, Table, Modal, message, DatePicker, Select, Spin, Tag, Space } from 'antd';
 import { ArrowLeftIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -30,7 +30,6 @@ const groupStockData = (items = []) => {
     if (!grouped[nama_ikan]) {
       grouped[nama_ikan] = { total_stok: 0, potong_3_container: 0, potong_collecting: 0 };
     }
-    // Gunakan berat_awal asli tanpa pengurangan potong_susut
     grouped[nama_ikan].total_stok += berat_awal;
     grouped[nama_ikan].potong_3_container += potong_susut;
     grouped[nama_ikan].potong_collecting += potong_susut;
@@ -60,6 +59,7 @@ export default function GoodsReceipt() {
         ...(filters.endDate && { date_end: filters.endDate }),
         ...(filters.grp !== null && { 'pb.grp': filters.grp }),
         ...(filters.done !== null && { done: filters.done }),
+        'pb.is_delete':0
       };
 
       const res = await axios.get(`${config.API_BASE_URL}/penerimaan_barang`, {
@@ -72,7 +72,7 @@ export default function GoodsReceipt() {
         setPagination(prev => ({
           ...prev,
           current: page,
-          total: res.data.total || res.data.data.length, // fallback jika tidak ada total
+          total: res.data.total || res.data.data.length,
         }));
       } else {
         message.error('Format data tidak sesuai.');
@@ -86,10 +86,7 @@ export default function GoodsReceipt() {
   };
 
   useEffect(() => { fetchData(); }, []);
-
-  useEffect(() => {
-    fetchData(pagination.current, pagination.pageSize);
-  }, [filters]);
+  useEffect(() => { fetchData(pagination.current, pagination.pageSize); }, [filters]);
 
   const handleTableChange = ({ current, pageSize }) => {
     setPagination(prev => ({ ...prev, current, pageSize }));
@@ -118,14 +115,32 @@ export default function GoodsReceipt() {
     }
   };
 
+  const handleDelete = (record) => {
+    Modal.confirm({
+      title: 'Konfirmasi Hapus',
+      content: `Yakin ingin menghapus penerimaan ${record.nomor_penerimaan_barang}?`,
+      onOk: async () => {
+        setLoading(true);
+        try {
+          await axios.delete(`${config.API_BASE_URL}/penerimaan_barang/${record.id_penerimaan_barang}`, authHeader);
+          message.success('Data berhasil dihapus');
+          fetchData(pagination.current, pagination.pageSize);
+        } catch (error) {
+          message.error('Gagal menghapus data');
+          console.error(error);
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
+  };
+
   const handlePrint = (record, type) => {
     const endpoint = type === 'stock' ? 'pencatatan_stok_printer' : 'penerimaan_barang_printer';
-  
     const fetchDetail = async (id) => {
       const res = await axios.get(`${config.API_BASE_URL}/penerimaan_barang/${id}`, authHeader);
       return res.data.data || res.data;
     };
-  
     const preparePayload = (dataDetail, type) => {
       const items = dataDetail.detail_penerimaan_barang;
       const payloadBase = {
@@ -135,9 +150,7 @@ export default function GoodsReceipt() {
         nama_gudang: dataDetail.nama_gudang,
         collecting: [dataDetail.metode_kapal],
       };
-    
       if (type === 'stock') {
-        // Gunakan groupStockData yang sudah tidak mengurangi potong_susut
         const detail_stok = groupStockData(items);
         const total_potong = items.reduce((sum, item) => sum + item.potong_susut, 0);
         return {
@@ -148,14 +161,11 @@ export default function GoodsReceipt() {
           detail_stok,
         };
       } else {
-        // Untuk penerimaan, kurangi potong_susut saat menyiapkan qty
         const adjustedItems = items.map(item => ({
           ...item,
           qty: (item.berat_awal || 0) - (item.potong_susut || 0),
         }));
-    
         const detail_penerimaan = groupFishData(adjustedItems);
-    
         return {
           ...payloadBase,
           total_qty: adjustedItems.reduce((sum, item) => sum + (item.qty || 0), 0),
@@ -163,8 +173,6 @@ export default function GoodsReceipt() {
         };
       }
     };
-    
-  
     const downloadPdf = (data, filename) => {
       const blob = new Blob([data], { type: 'application/pdf' });
       const url = window.URL.createObjectURL(blob);
@@ -175,7 +183,6 @@ export default function GoodsReceipt() {
       link.click();
       link.remove();
     };
-  
     Modal.confirm({
       title: `Konfirmasi Cetak ${type === 'stock' ? 'Stok' : 'Penerimaan'}`,
       content: `Anda yakin ingin mencetak ${type === 'stock' ? 'stok' : 'penerimaan'} ${record.nomor_penerimaan_barang}?`,
@@ -183,10 +190,7 @@ export default function GoodsReceipt() {
         try {
           const dataDetail = await fetchDetail(record.id_penerimaan_barang);
           const payload = preparePayload(dataDetail, type);
-  
-          // Debug: cek payload sebelum dikirim
           console.log('Payload untuk cetak:', payload);
-  
           const resPdf = await axios.post(
             `${config.API_BASE_URL}/${endpoint}`,
             payload,
@@ -196,7 +200,6 @@ export default function GoodsReceipt() {
               responseType: 'blob',
             }
           );
-  
           downloadPdf(resPdf.data, `${type}_${record.nomor_penerimaan_barang}.pdf`);
         } catch (err) {
           message.error(`Gagal mencetak PDF ${type}`);
@@ -205,31 +208,21 @@ export default function GoodsReceipt() {
       },
     });
   };
-  
 
   const columns = [
     { title: 'No', render: (_, __, idx) => (pagination.current - 1) * pagination.pageSize + idx + 1 },
     { title: 'Nomor Penerimaan', dataIndex: 'nomor_penerimaan_barang' },
     { title: 'Tanggal', dataIndex: 'tanggal_terima' },
-    {
-      title: 'GRP',
-      dataIndex: 'grp',
-      render: val => val === 1 ? <Tag color="green">GRP</Tag> : <Tag color="red">Non-GRP</Tag>
-    },
-    {
-      title: 'Status',
-      dataIndex: 'done',
-      render: val => val === 1 ? <Tag color="green">Done</Tag> : <Tag color="orange">Belum</Tag>
-    },
-    { render: (_, record) => <Button onClick={() => showDetail(record)}>Lihat Detail</Button> },
-    {
-      render: (_, record) => (
-        <>
-          <Button type="primary" onClick={() => handlePrint(record, 'penerimaan')} className="mr-2">Cetak Penerimaan</Button>
-          <Button onClick={() => handlePrint(record, 'stock')}>Cetak Stok</Button>
-        </>
-      )
-    },
+    { title: 'GRP', dataIndex: 'grp', render: val => val === 1 ? <Tag color="green">GRP</Tag> : <Tag color="red">Non-GRP</Tag> },
+    { title: 'Status', dataIndex: 'done', render: val => val === 1 ? <Tag color="green">Done</Tag> : <Tag color="orange">Belum</Tag> },
+    { title: 'Aksi', render: (_, record) => (
+      <Space>
+        <Button onClick={() => showDetail(record)}>Lihat Detail</Button>
+        <Button type="primary" onClick={() => handlePrint(record, 'penerimaan')}>Cetak Penerimaan</Button>
+        <Button onClick={() => handlePrint(record, 'stock')}>Cetak Stok</Button>
+        <Button danger onClick={() => handleDelete(record)}>Hapus</Button>
+      </Space>
+    )},
   ];
 
   return (

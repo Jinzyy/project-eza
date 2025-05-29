@@ -16,7 +16,7 @@ import {
   Tag
 } from 'antd';
 import { ArrowLeftIcon, EyeIcon } from 'lucide-react';
-import { DownloadOutlined } from '@ant-design/icons';
+import { DownloadOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import Header from '../../components/Header';
 import dayjs from 'dayjs';
@@ -53,10 +53,14 @@ export default function SalesOrder() {
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize] = useState(25);
+
+  const [pageSize, setPageSize] = useState(25);
+
   const [totalItems, setTotalItems] = useState(0);
 
   const [ikanFilter, setIkanFilter] = useState('');
+
+  const { confirm } = Modal;
 
   const token = sessionStorage.getItem('token');
 
@@ -150,25 +154,30 @@ export default function SalesOrder() {
     try {
       const query = new URLSearchParams();
       if (params.date_start) query.append('date_start', params.date_start);
-      if (params.date_end) query.append('date_end', params.date_end);
-      if (params.sort) query.append('sort', params.sort);
-      if (params.spp !== undefined && params.spp !== 'all') query.append('spp', params.spp);
+      if (params.date_end)   query.append('date_end',   params.date_end);
+      if (params.sort)       query.append('sort',         params.sort);
+      if (params.spp !== undefined && params.spp !== 'all') {
+        query.append('spp', params.spp);
+      }
       query.append('acc', 1);
-      query.append('is_delete', 0)
-      query.append('page', params.page || 1);
+      query.append('is_delete', 0);
+      query.append('page',  params.page     || 1);
       query.append('limit', params.pageSize || pageSize);
-
+  
       const url = `${config.API_BASE_URL}/sales_order?${query.toString()}`;
       const res = await fetch(url, { headers: { Authorization: token } });
       if (!res.ok) {
         message.error(`Gagal ambil sales order: ${res.status}`);
         return;
       }
+  
       const json = await res.json();
       if (json.status) {
-        setSalesOrders(json.data);
-        setTotalItems(json.total || 0);
-        setCurrentPage(params.page || 1);
+        const { data, pagination } = json;
+        setSalesOrders(data);
+        setTotalItems(pagination.total_items);
+        setCurrentPage(pagination.current_page);
+        setPageSize(pagination.per_page);
       }
     } catch {
       message.error('Kesalahan jaringan saat ambil sales order');
@@ -176,7 +185,7 @@ export default function SalesOrder() {
       setFilterLoading(false);
     }
   };
-
+  
   // Initial fetch
   useEffect(() => {
     if (token) {
@@ -405,6 +414,46 @@ export default function SalesOrder() {
     { title: 'Total Harga', key: 'total', render: (_, item) => (item.berat * item.harga).toLocaleString() },
   ];
 
+  const handleDelete = (id) => {
+    confirm({
+      title: 'Apakah Anda yakin ingin menghapus sales order ini?',
+      icon: <ExclamationCircleOutlined />,
+      content: 'Tindakan ini tidak dapat dibatalkan.',
+      okText: 'Ya, hapus',
+      okType: 'danger',
+      cancelText: 'Batal',
+      onOk() {
+        // Kirim request DELETE ke backend
+        setLoading(true); // jika Anda menggunakan loading state
+        fetch(`${config.API_BASE_URL}/sales_order/${id}`, {
+          method: 'DELETE',
+          headers: {
+            Authorization: token,
+            'Content-Type': 'application/json',
+          },
+        })
+          .then((res) => {
+            if (!res.ok) {
+              throw new Error('Gagal menghapus sales order');
+            }
+            return res.json();
+          })
+          .then(() => {
+            message.success('Sales order berhasil dihapus');
+            // Refresh data sales order, misal dengan memanggil ulang fetchSalesOrders
+            fetchSalesOrders(currentPage, pageSize);
+          })
+          .catch((error) => {
+            message.error(error.message || 'Terjadi kesalahan saat menghapus');
+          })
+          .finally(() => {
+            setLoading(false);
+          });
+      },
+    });
+  };
+  
+
   return (
     <Layout className="min-h-screen">
       <Header />
@@ -480,12 +529,46 @@ export default function SalesOrder() {
               { title: 'Customer', dataIndex: 'nama_customer', key: 'nama_customer' },
               { title: 'Tanggal SO', dataIndex: 'tanggal_so', key: 'tanggal_so' },
               {
-                title: 'Aksi', key: 'aksi', render: (_, record) => (<Space><Button icon={<EyeIcon size={16}/>} onClick={() => showDetailModal(record)}>Lihat Detail</Button><Button icon={<DownloadOutlined/>} onClick={() => confirmCetakPDF(record)}>Cetak PDF</Button></Space>)
+                title: 'Aksi', key: 'aksi', render: (_, record) => (
+                <Space>
+                  <Button 
+                    icon={<EyeIcon size={16}/>} 
+                    onClick={() => showDetailModal(record)}>
+                      Lihat Detail
+                  </Button>
+                  <Button icon={<DownloadOutlined/>} 
+                    onClick={() => confirmCetakPDF(record)}>
+                      Cetak PDF
+                  </Button>
+                  <Button danger onClick={() => handleDelete(record.id_sales_order)}>
+                    Delete
+                  </Button>
+                </Space>)
               }
             ]}
             rowKey="id_sales_order"
-            pagination={{ current: currentPage, pageSize, total: totalItems, onChange: onPageChange, showSizeChanger: false }}
             loading={filterLoading}
+            pagination={{
+              current: currentPage,
+              pageSize,
+              total: totalItems,
+              showSizeChanger: true,
+              pageSizeOptions: ['10','25','50','100'],
+              onChange: (page, newSize) => {
+                setCurrentPage(page);
+                if (newSize !== pageSize) {
+                  setPageSize(newSize);
+                }
+                fetchSalesOrders({
+                  page,
+                  pageSize: newSize,
+                  date_start: dateRange[0]?.format('YYYY-MM-DD'),
+                  date_end:   dateRange[1]?.format('YYYY-MM-DD'),
+                  sort: sortOrder,
+                  spp: sppFilter !== 'all' ? sppFilter : undefined,
+                });
+              }
+            }}
           />
 
           <Modal

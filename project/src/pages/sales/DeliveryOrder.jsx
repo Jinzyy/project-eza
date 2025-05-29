@@ -52,6 +52,10 @@ export default function DeliveryOrder() {
   const [warningModalVisible, setWarningModalVisible] = useState(false);
   const [pendingCustomRecord, setPendingCustomRecord] = useState(null);
 
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteModal, setDeleteModal] = useState({ visible: false, record: null });
+  
+
 
   const API = config.API_BASE_URL;
 
@@ -76,6 +80,8 @@ export default function DeliveryOrder() {
         ...(soSort !== 'reset' ? { sort: soSort } : {}),
         page:  soPagination.current,
         limit: soPagination.pageSize,
+        acc:1,
+        is_delete:0
       };
       const soQ = new URLSearchParams(soParams).toString();
       const { data: soRes } = await axios.get(
@@ -102,6 +108,7 @@ export default function DeliveryOrder() {
         page:  doPagination.current,
         limit: doPagination.pageSize,
         ...(doSPPFilter != null ? { spp: doSPPFilter } : {}),
+        is_delete:0
       };
       const doQ = new URLSearchParams(doParams).toString();
       const { data: doRes } = await axios.get(
@@ -182,6 +189,9 @@ export default function DeliveryOrder() {
             }}
           >
             Custom DO
+          </Button>
+          <Button danger onClick={() => openDeleteModal(rec)}>
+            Delete
           </Button>
         </Space>
       )
@@ -409,6 +419,38 @@ export default function DeliveryOrder() {
     setLoading(false);
   }
 };
+
+  const openDeleteModal = (record) => {
+    setDeleteModal({ visible: true, record });
+  };
+
+  const handleDeleteDO = async () => {
+    const record = deleteModal.record;
+    if (!record) return;
+  
+    setLoading(true);
+    try {
+      const token = sessionStorage.getItem('token');
+      const { data: res } = await axios.delete(
+        `${API}/delivery_order/${record.id_delivery_order}`,
+        { headers: { Authorization: token } }
+      );
+      if (res.status) {
+        message.success(`DO ${record.nomor_do} berhasil dihapus`);
+        // refresh data
+        fetchData();
+      } else {
+        message.error(res.message || 'Gagal menghapus DO');
+      }
+    } catch (e) {
+      message.error(e.response?.data?.message || 'Gagal menghapus DO');
+    } finally {
+      setLoading(false);
+      setDeleteModal({ visible: false, record: null });
+    }
+  };
+  
+
 
 
   return (
@@ -787,6 +829,18 @@ export default function DeliveryOrder() {
         ) : (
           <p>Tidak ada detail.</p>
         )}
+      </Modal>
+
+      <Modal
+        visible={deleteModal.visible}
+        title="Konfirmasi Hapus DO"
+        onOk={handleDeleteDO}
+        onCancel={() => setDeleteModal({ visible: false, record: null })}
+        okText="Hapus"
+        cancelText="Batal"
+        okButtonProps={{ danger: true }}
+      >
+        <p>Anda yakin ingin menghapus DO <b>{deleteModal.record?.nomor_do}</b>?</p>
       </Modal>
     </Layout>
   );
