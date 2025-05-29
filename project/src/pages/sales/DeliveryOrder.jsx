@@ -449,10 +449,59 @@ export default function DeliveryOrder() {
       setDeleteModal({ visible: false, record: null });
     }
   };
+
+  const confirmPrintDO = async () => {
+    const record = modal.record;
+    try {
+      const token = sessionStorage.getItem('token');
+      const { data: getRes } = await axios.get(`${API}/delivery_order/${record.id_delivery_order}`, {
+        headers: { Authorization: token }
+      });
+      if (!getRes.status) {
+        message.error('Gagal mengambil data DO');
+        return;
+      }
+      const data = getRes.data;
+      const payload = {
+        nama_customer: record.nama_customer,
+        alamat: record.alamat,
+        nomor_telepon: record.nomor_telepon,
+        nomor_do: record.nomor_do,
+        tanggal_do: record.tanggal_do,
+        nomor_kendaraan: record.nomor_kendaraan,
+        catatan: record.catatan,
+        nomor_so: record.nomor_so,
+        employee_name: record.employee_name,
+        detail_delivery_order: data.detail_delivery_order.map((item) => ({
+          nama_ikan: item.nama_ikan,
+          quantity: item.netto_second,
+        })),
+      };
   
-
-
-
+      const response = await axios.post(`${API}/delivery_order_printer`, payload, {
+        headers: { Authorization: token },
+        responseType: 'blob', // Penting: agar response di-handle sebagai file
+      });
+  
+      // Buat link download dari blob
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
+      const link = document.createElement('a');
+      link.href = url;
+      // Nama file bisa kamu atur sesuai nomor DO
+      link.setAttribute('download', `${record.nomor_do}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+  
+      message.success('PDF berhasil diunduh');
+    } catch (err) {
+      message.error(err.response?.data?.message || 'Terjadi kesalahan saat mencetak DO');
+    } finally {
+      setModal({ visible: false, record: null });
+    }
+  };
+  
   return (
     <Layout className="min-h-screen">
       <Header />
@@ -683,10 +732,7 @@ export default function DeliveryOrder() {
       <Modal
         visible={modal.visible}
         title={`Print DO ${modal.record?.nomor_do}`}
-        onOk={() => {
-          /* print logic here */
-          setModal({ visible: false, record: null });
-        }}
+        onOk={confirmPrintDO}
         onCancel={() => setModal({ visible: false, record: null })}
         okText="Ya, Print"
         cancelText="Batal"
