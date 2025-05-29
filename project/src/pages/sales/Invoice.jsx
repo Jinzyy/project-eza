@@ -786,7 +786,7 @@ export default function InvoicePreview() {
           onOk={async () => {
             try {
               await axios.delete(`${config.API_BASE_URL}/invoice/${invoiceToDelete.id_invoice}`, {
-                headers: { Authorization: `Bearer ${sessionStorage.getItem("token")}` }
+                headers: { Authorization: token}
               });
               message.success("Invoice berhasil dihapus");
               setInvoiceList(invoiceList.filter(inv => inv.id_invoice !== invoiceToDelete.id_invoice));
