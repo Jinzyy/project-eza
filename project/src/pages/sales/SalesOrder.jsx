@@ -422,36 +422,49 @@ export default function SalesOrder() {
       okText: 'Ya, hapus',
       okType: 'danger',
       cancelText: 'Batal',
-      onOk() {
-        // Kirim request DELETE ke backend
-        setLoading(true); // jika Anda menggunakan loading state
-        fetch(`${config.API_BASE_URL}/sales_order/${id}`, {
-          method: 'DELETE',
-          headers: {
-            Authorization: token,
-            'Content-Type': 'application/json',
-          },
-        })
-          .then((res) => {
-            if (!res.ok) {
-              throw new Error('Gagal menghapus sales order');
-            }
-            return res.json();
-          })
-          .then(() => {
-            message.success('Sales order berhasil dihapus');
-            // Refresh data sales order, misal dengan memanggil ulang fetchSalesOrders
-            fetchSalesOrders(currentPage, pageSize);
-          })
-          .catch((error) => {
-            message.error(error.message || 'Terjadi kesalahan saat menghapus');
-          })
-          .finally(() => {
-            setLoading(false);
+      async onOk() {
+        setLoading(true);
+        try {
+          const res = await fetch(`${config.API_BASE_URL}/sales_order/${id}`, {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: token,
+            },
           });
+  
+          const data = await res.json();
+          if (!res.ok) {
+            // munculkan modal error dengan pesan yang diinginkan
+            Modal.error({
+              title: 'Gagal',
+              content: 'Gagal menghapus sales order / sales order sudah diproses pembayaran',
+            });
+            return;
+          }
+  
+          message.success('Sales order berhasil dihapus');
+          // refresh daftar dengan filter & pagination yang sama
+          fetchSalesOrders({
+            page: currentPage,
+            pageSize,
+            date_start: dateRange[0]?.format('YYYY-MM-DD'),
+            date_end:   dateRange[1]?.format('YYYY-MM-DD'),
+            sort: sortOrder,
+            spp: sppFilter !== 'all' ? sppFilter : undefined,
+          });
+        } catch {
+          Modal.error({
+            title: 'Gagal',
+            content: 'Gagal menghapus sales order / sales order sudah diproses pembayaran',
+          });
+        } finally {
+          setLoading(false);
+        }
       },
     });
   };
+  
   
 
   return (
