@@ -825,6 +825,22 @@ export default function InvoicePreview() {
               });
               message.success("Invoice berhasil dihapus");
               setInvoiceList(invoiceList.filter(inv => inv.id_invoice !== invoiceToDelete.id_invoice));
+              fetchInvoices(
+                invoiceSortOrder,
+                invoiceCurrentPage,
+                invoicePageSize,
+                invoiceIpFilter,
+                invoiceDateRange
+              );
+              // **refresh juga DO list**
+              fetchDOList(
+                doSppFilter,
+                doSortOrder,
+                doCurrentPage,
+                doPageSize,
+                doDateRange,
+                doProcessedFilter
+              );
             } catch (error) {
               console.error("Error delete invoice:", error);  
               message.error("Gagal menghapus invoice");
