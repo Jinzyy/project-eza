@@ -818,13 +818,15 @@ export default function InvoicePreview() {
           open={deleteModalVisible}
           onCancel={() => setDeleteModalVisible(false)}
           onOk={async () => {
+            const token = sessionStorage.getItem('token'); 
             try {
               await axios.delete(`${config.API_BASE_URL}/invoice/${invoiceToDelete.id_invoice}`, {
                 headers: { Authorization: token}
               });
               message.success("Invoice berhasil dihapus");
               setInvoiceList(invoiceList.filter(inv => inv.id_invoice !== invoiceToDelete.id_invoice));
-            } catch {
+            } catch (error) {
+              console.error("Error delete invoice:", error);  
               message.error("Gagal menghapus invoice");
             } finally {
               setDeleteModalVisible(false);
