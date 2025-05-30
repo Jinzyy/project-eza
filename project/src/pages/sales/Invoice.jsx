@@ -77,6 +77,8 @@ export default function InvoicePreview() {
 
   const [summaryAdjustments, setSummaryAdjustments] = useState({});
 
+  const [doProcessedFilter, setDoProcessedFilter] = useState(null);
+
   // Invoice form data
   const [invoiceData, setInvoiceData] = useState({
     tanggal_invoice: dayjs(),
@@ -87,15 +89,18 @@ export default function InvoicePreview() {
   const API = config.API_BASE_URL;
 
   // Fetch DO list
-  const fetchDOList = async (spp, sort, page, limit, dateRange) => {
+  const fetchDOList = async (spp, sort, page, limit, dateRange, processed) => {
     try {
       const token = sessionStorage.getItem('token');
-      const params = { page, limit, sort, is_delete:0 };
-      if (spp !== null) params.spp = spp ? 1 : 0;
+      const params = { page, limit, sort, is_delete: 0 };
+  
+      if (spp !== null)         params.spp       = spp ? 1 : 0;
+      if (processed !== null)   params.processed = processed ? 1 : 0;
       if (dateRange.length === 2) {
         params.start_date = dateRange[0].format('YYYY-MM-DD');
-        params.end_date = dateRange[1].format('YYYY-MM-DD');
+        params.end_date   = dateRange[1].format('YYYY-MM-DD');
       }
+  
       const res = await axios.get(`${API}/delivery_order`, {
         headers: { Authorization: token },
         params
@@ -135,8 +140,15 @@ export default function InvoicePreview() {
 
   // Re-fetch DO on filter/sort/page change
   useEffect(() => {
-    fetchDOList(doSppFilter, doSortOrder, doCurrentPage, doPageSize, doDateRange);
-  }, [doSppFilter, doSortOrder, doCurrentPage, doPageSize, doDateRange]);
+    fetchDOList(
+      doSppFilter,
+      doSortOrder,
+      doCurrentPage,
+      doPageSize,
+      doDateRange,
+      doProcessedFilter
+    );
+  }, [doSppFilter, doSortOrder, doCurrentPage, doPageSize, doDateRange, doProcessedFilter]);
 
   // Fetch invoices
   const fetchInvoices = async (sortOrder, page, limit, ipFilter, dateRange) => {
@@ -224,6 +236,16 @@ export default function InvoicePreview() {
       render: spp => (
         <Tag color={spp === 1 ? 'green' : 'red'}>
           {spp === 1 ? 'True' : 'False'}
+        </Tag>
+      )
+    },
+    {
+      title: 'Status',
+      dataIndex: 'processed',
+      key: 'processed',
+      render: processed => (
+        <Tag color={processed === 1 ? 'green' : 'red'}>
+          {processed === 1 ? 'Diproses' : 'Belum Diproses'}
         </Tag>
       )
     },
@@ -411,6 +433,8 @@ export default function InvoicePreview() {
       });
       if (res.data.status) {
         message.success('Invoice berhasil dikirim');
+        // refresh daftar do
+        fetchDOList(doSppFilter, doSortOrder, doCurrentPage, doPageSize, doDateRange, doProcessedFilter);
         // refresh daftar invoice
         fetchInvoices(invoiceSortOrder, invoiceCurrentPage, invoicePageSize, invoiceIpFilter, invoiceDateRange);
         form.resetFields();
@@ -477,6 +501,16 @@ export default function InvoicePreview() {
               >
                 <Select.Option value="desc">Tanggal Terbaru</Select.Option>
                 <Select.Option value="asc">Tanggal Terlama</Select.Option>
+              </Select>
+              <Select
+                placeholder="Filter Processed"
+                allowClear
+                style={{ width: 140 }}
+                value={doProcessedFilter}
+                onChange={v => { setDoProcessedFilter(v ?? null); setDoCurrentPage(1); }}
+              >
+                <Select.Option value={true}>Diproses</Select.Option>
+                <Select.Option value={false}>Belum Diproses</Select.Option>
               </Select>
             </Space>
             <Table
