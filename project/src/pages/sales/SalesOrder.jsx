@@ -155,7 +155,7 @@ export default function SalesOrder() {
       const query = new URLSearchParams();
       if (params.date_start) query.append('date_start', params.date_start);
       if (params.date_end)   query.append('date_end',   params.date_end);
-      if (params.sort)       query.append('sort',         params.sort);
+      if (params.sort)       query.append('sort',       params.sort);
       if (params.spp !== undefined && params.spp !== 'all') {
         query.append('spp', params.spp);
       }
@@ -166,7 +166,16 @@ export default function SalesOrder() {
   
       const url = `${config.API_BASE_URL}/sales_order?${query.toString()}`;
       const res = await fetch(url, { headers: { Authorization: token } });
+  
       if (!res.ok) {
+        const errText = await res.text();
+        if (res.status === 400 && errText.includes('Data tidak ditemukan')) {
+          message.warning('Tidak ada data Sales Order');
+          setSalesOrders([]);
+          setTotalItems(0);
+          setCurrentPage(1);
+          return;
+        }
         message.error(`Gagal ambil sales order: ${res.status}`);
         return;
       }
@@ -174,10 +183,21 @@ export default function SalesOrder() {
       const json = await res.json();
       if (json.status) {
         const { data, pagination } = json;
+        if (!data || pagination.total_items === 0) {
+          message.warning('Tidak ada data Sales Order');
+          setSalesOrders([]);
+          setTotalItems(0);
+          setCurrentPage(1);
+          return;
+        }
+  
         setSalesOrders(data);
         setTotalItems(pagination.total_items);
         setCurrentPage(pagination.current_page);
         setPageSize(pagination.per_page);
+      } else {
+        message.error(json.message || 'Gagal ambil sales order');
+        setSalesOrders([]);
       }
     } catch {
       message.error('Kesalahan jaringan saat ambil sales order');
@@ -185,6 +205,7 @@ export default function SalesOrder() {
       setFilterLoading(false);
     }
   };
+  
   
   // Initial fetch
   useEffect(() => {

@@ -105,17 +105,41 @@ export default function InvoicePreview() {
         headers: { Authorization: token },
         params
       });
+  
       if (res.data.status) {
-        setDoList(res.data.data);
-        setDoCurrentPage(res.data.pagination.current_page);
-        setDoTotalItems(res.data.pagination.total_items);
+        const { data, pagination } = res.data;
+  
+        const isEmpty = !data || pagination.total_items === 0;
+        if (isEmpty) {
+          message.warning('Tidak ada data Delivery Order');
+          setDoList([]);
+          setDoCurrentPage(1);
+          setDoTotalItems(0);
+          return;
+        }
+  
+        setDoList(data);
+        setDoCurrentPage(pagination.current_page);
+        setDoTotalItems(pagination.total_items);
       } else {
         message.error(res.data.message || 'Gagal mengambil data DO');
+        setDoList([]);
+        setDoCurrentPage(1);
+        setDoTotalItems(0);
       }
-    } catch {
-      message.error('Gagal mengambil data DO');
+    } catch (err) {
+      const msg = err.response?.data?.message;
+      if (msg === 'Data tidak ditemukan') {
+        message.warning('Tidak ada data Delivery Order');
+        setDoList([]);
+        setDoCurrentPage(1);
+        setDoTotalItems(0);
+      } else {
+        message.error('Gagal mengambil data DO');
+      }
     }
   };
+  
 
   // Fetch ikan prices
   useEffect(() => {
@@ -154,27 +178,46 @@ export default function InvoicePreview() {
   const fetchInvoices = async (sortOrder, page, limit, ipFilter, dateRange) => {
     try {
       const token = sessionStorage.getItem('token');
-      const params = { sort: sortOrder, page, limit, cancelled:0 };
+      const params = { sort: sortOrder, page, limit, cancelled: 0 };
       if (ipFilter !== null) params.ip = ipFilter ? 1 : 0;
       if (dateRange.length === 2) {
         params.start_date = dateRange[0].format('YYYY-MM-DD');
-        params.end_date = dateRange[1].format('YYYY-MM-DD');
+        params.end_date   = dateRange[1].format('YYYY-MM-DD');
       }
+  
       const res = await axios.get(`${API}/invoice`, {
         headers: { Authorization: token },
         params
       });
-      if (res.data.status) {
-        setInvoiceList(res.data.data);
-        setInvoiceCurrentPage(res.data.pagination.current_page);
-        setInvoiceTotalItems(res.data.pagination.total_items);
+  
+      const { status, data, pagination, message: msg } = res.data;
+  
+      if (status && data) {
+        setInvoiceList(data);
+        setInvoiceCurrentPage(pagination.current_page);
+        setInvoiceTotalItems(pagination.total_items);
       } else {
-        message.error(res.data.message || 'Gagal mengambil daftar invoice');
+        message.error(msg || 'Gagal mengambil daftar invoice');
+        setInvoiceList([]);
+        setInvoiceCurrentPage(pagination?.current_page || 1);
+        setInvoiceTotalItems(0);
       }
-    } catch {
-      message.error('Gagal mengambil daftar invoice');
+  
+    } catch (err) {
+      if (
+        err.response &&
+        err.response.data &&
+        err.response.data.message === 'Data tidak ditemukan'
+      ) {
+        message.warning('Tidak ada data transaksi');
+        setInvoiceList([]);
+        setInvoiceCurrentPage(1);
+        setInvoiceTotalItems(0);
+      } else {
+        message.error('Gagal mengambil daftar invoice');
+      }
     }
-  };
+  };  
 
   // Re-fetch invoices when modal opens or filters change
   useEffect(() => {

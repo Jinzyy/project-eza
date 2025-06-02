@@ -80,24 +80,55 @@ export default function DeliveryOrder() {
         ...(soSort !== 'reset' ? { sort: soSort } : {}),
         page:  soPagination.current,
         limit: soPagination.pageSize,
-        acc:1,
-        is_delete:0
+        acc: 1,
+        is_delete: 0
       };
+    
       const soQ = new URLSearchParams(soParams).toString();
       const { data: soRes } = await axios.get(
         `${API}/sales_order${soQ ? `?${soQ}` : ''}`,
         { headers: { Authorization: token } }
       );
+    
       if (soRes.status) {
-        setSalesOrders(soRes.data);
-        setSoPagination({
-          current:  soRes.pagination.current_page,
-          pageSize: soRes.pagination.per_page,
-          total:    soRes.pagination.total_items,
-        });
+        const isEmpty = !soRes.data || (soRes.pagination?.total_items === 0);
+        if (isEmpty) {
+          message.warning('Tidak ada data Sales Order');
+          setSalesOrders([]);
+          setSoPagination({
+            current: soRes.pagination?.current_page || 1,
+            pageSize: soRes.pagination?.per_page || soPagination.pageSize,
+            total: 0,
+          });
+        } else {
+          setSalesOrders(soRes.data);
+          setSoPagination({
+            current:  soRes.pagination.current_page,
+            pageSize: soRes.pagination.per_page,
+            total:    soRes.pagination.total_items,
+          });
+        }
+      } else {
+        message.error(soRes.message || 'Gagal mengambil Sales Order');
+        setSalesOrders([]);
       }
-    } catch {
-      message.error('Gagal mengambil Sales Order');
+    
+    } catch (err) {
+      if (
+        err.response &&
+        err.response.data &&
+        err.response.data.message === 'Data tidak ditemukan'
+      ) {
+        message.warning('Tidak ada data Sales Order');
+        setSalesOrders([]);
+        setSoPagination({
+          current: 1,
+          pageSize: soPagination.pageSize,
+          total: 0,
+        });
+      } else {
+        message.error('Gagal mengambil Sales Order');
+      }
     }
 
     // Delivery Orders
