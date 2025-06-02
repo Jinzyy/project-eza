@@ -55,7 +55,7 @@ export default function DeliveryOrder() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteModal, setDeleteModal] = useState({ visible: false, record: null });
   
-
+  const [fishList, setFishList] = useState([]);
 
   const API = config.API_BASE_URL;
 
@@ -134,6 +134,18 @@ export default function DeliveryOrder() {
         { headers: { Authorization: token } }
       );
       if (custRes.status) setCustomers(custRes.data);
+    } catch {
+      // silent
+    }
+
+    try {
+      const { data } = await axios.get(
+        `${API}/ikan`,
+        { headers: { Authorization: token } }
+      );
+      if (data.status) {
+        setFishList(data.data || data);
+      }
     } catch {
       // silent
     }
@@ -307,11 +319,12 @@ export default function DeliveryOrder() {
         netto_second: c.stokWeight - c.nettoSecond,
       }));
 
-    const detailPallet = Array.from(new Set(
-      cards
-        .filter(c => c.mode === 'pilih' && c.selectedStock)
-        .map(c => c.selectedStock.id_pallet)
-    ));
+      const detailPallet = cards
+      .filter(c => c.mode === 'pilih' && c.selectedStock)
+      .map(c => ({
+        id_pallet: c.selectedStock.id_pallet,
+        id_ikan:   c.id_ikan
+      }));
 
     const payload = {
       delivery_order: {
@@ -801,29 +814,47 @@ export default function DeliveryOrder() {
         visible={customModal.visible}
         title="Custom Delivery Order"
         onCancel={() => setCustomModal({ visible: false, record: null })}
-        onOk={() => customForm.submit()}
-        okText="Kirim"
+        footer={null}
       >
         <Form form={customForm} onFinish={handleCustomSubmit} layout="vertical">
           <Form.List name="items">
-            {(fields) => (
+            {(fields, { add, remove }) => (
               <>
                 {fields.map(({ key, name, ...restField }) => (
                   <Space key={key} align="baseline" style={{ display: 'flex', marginBottom: 8 }}>
+                    {/* Dropdown pilih ikan */}
                     <Form.Item
                       {...restField}
-                      name={[name, 'nama_ikan']}
-                      label="Nama Ikan"
+                      name={[name, 'id_ikan']}
+                      label="Pilih Ikan"
+                      rules={[{ required: true, message: 'Harap pilih ikan' }]}
                     >
-                      <Input disabled />
+                      <Select
+                        showSearch
+                        placeholder="Cari ikan"
+                        optionFilterProp="children"
+                        onChange={val => {
+                          const fish = fishList.find(f => f.id_ikan === val);
+                          // autofill netto_first saat ikan dipilih
+                          customForm.setFieldsValue({
+                            items: fields.map((f, idx) =>
+                              f.name === name
+                                ? { ...customForm.getFieldValue('items')[idx], netto_first: fish?.berat ?? 0 }
+                                : customForm.getFieldValue('items')[idx]
+                            )
+                          });
+                        }}
+                        style={{ width: 200 }}
+                      >
+                        {fishList.map(f => (
+                          <Option key={f.id_ikan} value={f.id_ikan}>
+                            {f.nama_ikan}
+                          </Option>
+                        ))}
+                      </Select>
                     </Form.Item>
-                    <Form.Item
-                      {...restField}
-                      name={[name, 'netto_first']}
-                      label="Netto First"
-                    >
-                      <InputNumber disabled />
-                    </Form.Item>
+
+                    {/* Netto Second (editable) */}
                     <Form.Item
                       {...restField}
                       name={[name, 'netto_second']}
@@ -832,11 +863,32 @@ export default function DeliveryOrder() {
                     >
                       <InputNumber min={0} step={0.1} />
                     </Form.Item>
+
+                    <Form.Item
+                      label="Aksi"
+                    >
+                      <Button type="default" danger ghost onClick={() => remove(name)}>
+                        Hapus
+                      </Button>
+                    </Form.Item>
                   </Space>
                 ))}
+
+                {/* Tombol Tambah Row */}
+                <Form.Item>
+                  <Button type="dashed" block onClick={() => add()}>
+                    Tambah Row
+                  </Button>
+                </Form.Item>
               </>
             )}
           </Form.List>
+
+          <Form.Item>
+            <Button type="primary" block loading={loading} htmlType="submit">
+              Kirim Custom DO
+            </Button>
+          </Form.Item>
         </Form>
       </Modal>
 
