@@ -14,6 +14,7 @@ import Sales from './pages/Sales';
 import SalesOrder from './pages/sales/SalesOrder';
 import DeliveryOrder from './pages/sales/DeliveryOrder';
 import Invoice from './pages/sales/Invoice';
+import PencatatanAgenda from './pages/PencatatanAgenda';
 import './App.css';
 
 const theme = {
@@ -161,6 +162,11 @@ const AppRoutes = () => {
       <Route
         path="/sales/invoice"
         element={<ProtectedRoute><Invoice /></ProtectedRoute>}
+      />
+
+      <Route 
+        path="/agenda"
+        element={<ProtectedRoute><PencatatanAgenda/></ProtectedRoute>}
       />
 
       <Route path="*" element={<Navigate to="/" replace />} />

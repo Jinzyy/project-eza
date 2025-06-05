@@ -439,6 +439,7 @@ export default function PurchaseNote() {
     <Layout>
       <Header />
       <Content style={{ padding: 24 }}>
+      <div className="container mx-auto px-6 py-12">
         <Button icon={<ArrowLeftIcon />} onClick={() => navigate(-1)} style={{ marginBottom: 16 }}>
           Kembali
         </Button>
@@ -683,6 +684,7 @@ export default function PurchaseNote() {
             Apakah Anda yakin ingin menghapus invoice <b>{invoiceToDelete?.nomor_nota}</b>?
           </p>
         </Modal>
+        </div>
       </Content>
     </Layout>
   );
