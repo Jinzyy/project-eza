@@ -16,7 +16,7 @@ import {
   DatePicker,
   Table,
   Spin,
-  notification
+  message
 } from 'antd';
 import InputNumber from 'antd/lib/input-number';
 import { ArrowLeftIcon, PlusIcon } from 'lucide-react';
@@ -47,40 +47,96 @@ export default function UnloadPallet() {
 
   // Fetch and map master data
   useEffect(() => {
-    const token = sessionStorage.getItem('token');
-    const headers = { Authorization: token };
-
-    Promise.all([
-      axios.get(`${config.API_BASE_URL}/ikan`, { headers }),
-      axios.get(`${config.API_BASE_URL}/kapal`, { headers }),
-      axios.get(`${config.API_BASE_URL}/gudang`, { headers }),
-      axios.get(`${config.API_BASE_URL}/freezer`, { headers }),
-      axios.get(`${config.API_BASE_URL}/pallet`, { headers })
-    ])
-      .then(([resIkan, resKapal, resGudang, resFreezer, resPallet]) => {
-        // Map API fields to { id, name }
-        const mappedFish = resIkan.data.data.map(i => ({ id: i.id_ikan, name: i.nama_ikan }));
-        const mappedKapal = resKapal.data.data.map(k => ({ id: k.id_kapal, name: k.nama_kapal }));
-        const mappedGudang = resGudang.data.data.map(g => ({ id: g.id_gudang, name: g.nama_gudang }));
-        const mappedFreezer = resFreezer.data.data.map(f => ({ id: f.id_freezer, name: f.nama_freezer }));
-        const mappedPallet = resPallet.data.data.map(p => ({ id: p.id_pallet, name: p.kode_pallet, weight: p.berat_pallet, nomor: p.nomor_pallet || 0 }));
-
-        setFishOptions(mappedFish);
-        setKapalOptions(mappedKapal);
-        setGudangOptions(mappedGudang);
-        setFreezerOptions(mappedFreezer);
-        setPalletOptions(mappedPallet);
-      })
-      .catch(err => {
-        console.error(err);
-        notification.error({
-          message: 'Error',
-          description: 'Gagal memuat data master. Mohon login ulang.',
-          placement: 'top',
-        });
-      })
-      .finally(() => setLoading(false));
+    const fetchMasters = async () => {
+      setLoading(true);
+      try {
+        const token = sessionStorage.getItem('token');
+        const headers = { Authorization: token };
+  
+        // semua request sekaligus
+        const requests = [
+          axios.get(`${config.API_BASE_URL}/ikan`, { headers }),
+          axios.get(`${config.API_BASE_URL}/kapal`, { headers }),
+          axios.get(`${config.API_BASE_URL}/gudang`, { headers }),
+          axios.get(`${config.API_BASE_URL}/freezer`, { headers }),
+          axios.get(`${config.API_BASE_URL}/pallet`, { headers }),
+        ];
+  
+        const results = await Promise.allSettled(requests);
+  
+        // Ikan
+        if (results[0].status === 'fulfilled' && Array.isArray(results[0].value.data.data)) {
+          setFishOptions(
+            results[0].value.data.data.map(i => ({ id: i.id_ikan, name: i.nama_ikan }))
+          );
+        } else {
+          setFishOptions([]); 
+          console.warn('Ikan kosong atau gagal');
+        }
+  
+        // Kapal
+        if (results[1].status === 'fulfilled' && Array.isArray(results[1].value.data.data)) {
+          setKapalOptions(
+            results[1].value.data.data.map(k => ({ id: k.id_kapal, name: k.nama_kapal }))
+          );
+        } else {
+          setKapalOptions([]);
+          console.warn('Kapal kosong atau gagal');
+        }
+  
+        // Gudang
+        if (results[2].status === 'fulfilled' && Array.isArray(results[2].value.data.data)) {
+          setGudangOptions(
+            results[2].value.data.data.map(g => ({ id: g.id_gudang, name: g.nama_gudang }))
+          );
+        } else {
+          setGudangOptions([]);
+          console.warn('Gudang kosong atau gagal');
+        }
+  
+        // Freezer
+        if (results[3].status === 'fulfilled' && Array.isArray(results[3].value.data.data)) {
+          setFreezerOptions(
+            results[3].value.data.data.map(f => ({ id: f.id_freezer, name: f.nama_freezer }))
+          );
+        } else {
+          setFreezerOptions([]);
+          console.warn('Freezer kosong atau gagal');
+        }
+  
+        // Pallet + lookup berat
+        if (results[4].status === 'fulfilled' && Array.isArray(results[4].value.data.data)) {
+          const pallets = results[4].value.data.data;
+          setPalletOptions(
+            pallets.map(p => ({
+              id: p.id_pallet,
+              name: p.kode_pallet ?? p.nomor_pallet,
+              weight: p.berat_pallet,
+              nomor: p.nomor_pallet,
+            }))
+          );
+          const weights = {};
+          pallets.forEach(p => { weights[p.id_pallet] = p.berat_pallet; });
+          setPalletWeights(weights);
+        } else {
+          setPalletOptions([]);
+          setPalletWeights({});
+          console.warn('Pallet kosong atau gagal');
+        }
+  
+      } catch (err) {
+        console.error('Error unexpected:', err);
+        // uniform warning style
+        message.warning('Ada data yang kosong, mohon cek Database atau koneksi');
+      } finally {
+        setLoading(false);
+      }
+    };
+  
+    fetchMasters();
   }, []);
+  
+  
 
   // Add fish to list
   const handleAddFish = fishId => {

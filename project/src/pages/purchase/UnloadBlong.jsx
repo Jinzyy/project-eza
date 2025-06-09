@@ -48,46 +48,118 @@ export default function UnloadBlong() {
 
   // Fetch all dropdown data
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchAll = async () => {
+      let hasEmpty = false; // flag untuk cek data kosong atau error
+  
+      // Ikan
       try {
-        const [ikanRes, kapalRes, gudangRes, freezerRes, palletRes] = await Promise.all([
-          axios.get(`${config.API_BASE_URL}/ikan`, authHeader),
-          axios.get(`${config.API_BASE_URL}/kapal`, authHeader),
-          axios.get(`${config.API_BASE_URL}/gudang`, authHeader),
-          axios.get(`${config.API_BASE_URL}/freezer`, authHeader),
-          axios.get(`${config.API_BASE_URL}/pallet`, authHeader),
-        ]);
-
-        // Map response data
-        setFishOptions(
-          ikanRes.data.data.map(i => ({ id: i.id_ikan, name: i.nama_ikan }))
-        );
-        setKapalOptions(
-          kapalRes.data.data.map(k => ({ id: k.id_kapal, nama: k.nama_kapal }))
-        );
-        setGudangOptions(
-          gudangRes.data.data.map(g => ({ id: g.id_gudang, nama: g.nama_gudang }))
-        );
-        setFreezerOptions(
-          freezerRes.data.data.map(f => ({ id: f.id_freezer, nama: f.nama_freezer }))
-        );
-        setPalletOptions(
-          palletRes.data.data.map(p => ({ id: p.id_pallet, nomor: p.nomor_pallet, berat: p.berat_pallet }))
-        );
-
-        // Build weight lookup by id_pallet
-        const weights = {};
-        palletRes.data.data.forEach(p => {
-          weights[p.id_pallet] = p.berat_pallet;
-        });
-        setPalletWeights(weights);
-      } catch (error) {
-        console.error('Error fetching data:', error);
-        message.error('Gagal memuat data dari server.');
+        const res = await axios.get(`${config.API_BASE_URL}/ikan`, authHeader);
+        if (Array.isArray(res.data.data) && res.data.data.length) {
+          setFishOptions(
+            res.data.data.map(i => ({ id: i.id_ikan, name: i.nama_ikan }))
+          );
+        } else {
+          setFishOptions([]);
+          console.warn('Data ikan kosong atau tidak valid');
+          hasEmpty = true;
+        }
+      } catch (err) {
+        console.error('Fetch ikan error', err);
+        setFishOptions([]);
+        hasEmpty = true;
+      }
+  
+      // Kapal
+      try {
+        const res = await axios.get(`${config.API_BASE_URL}/kapal`, authHeader);
+        if (Array.isArray(res.data.data) && res.data.data.length) {
+          setKapalOptions(
+            res.data.data.map(k => ({ id: k.id_kapal, nama: k.nama_kapal }))
+          );
+        } else {
+          setKapalOptions([]);
+          console.warn('Data kapal kosong atau tidak valid');
+          hasEmpty = true;
+        }
+      } catch (err) {
+        console.error('Fetch kapal error', err);
+        setKapalOptions([]);
+        hasEmpty = true;
+      }
+  
+      // Gudang
+      try {
+        const res = await axios.get(`${config.API_BASE_URL}/gudang`, authHeader);
+        if (Array.isArray(res.data.data) && res.data.data.length) {
+          setGudangOptions(
+            res.data.data.map(g => ({ id: g.id_gudang, nama: g.nama_gudang }))
+          );
+        } else {
+          setGudangOptions([]);
+          console.warn('Data gudang kosong atau tidak valid');
+          hasEmpty = true;
+        }
+      } catch (err) {
+        console.error('Fetch gudang error', err);
+        setGudangOptions([]);
+        hasEmpty = true;
+      }
+  
+      // Freezer
+      try {
+        const res = await axios.get(`${config.API_BASE_URL}/freezer`, authHeader);
+        if (Array.isArray(res.data.data) && res.data.data.length) {
+          setFreezerOptions(
+            res.data.data.map(f => ({ id: f.id_freezer, nama: f.nama_freezer }))
+          );
+        } else {
+          setFreezerOptions([]);
+          console.warn('Data freezer kosong atau tidak valid');
+          hasEmpty = true;
+        }
+      } catch (err) {
+        console.error('Fetch freezer error', err);
+        setFreezerOptions([]);
+        hasEmpty = true;
+      }
+  
+      // Pallet + lookup berat
+      try {
+        const res = await axios.get(`${config.API_BASE_URL}/pallet`, authHeader);
+        if (Array.isArray(res.data.data) && res.data.data.length) {
+          const pallets = res.data.data;
+          setPalletOptions(
+            pallets.map(p => ({
+              id: p.id_pallet,
+              nomor: p.nomor_pallet,
+              berat: p.berat_pallet
+            }))
+          );
+          const weights = {};
+          pallets.forEach(p => { weights[p.id_pallet] = p.berat_pallet; });
+          setPalletWeights(weights);
+        } else {
+          setPalletOptions([]);
+          setPalletWeights({});
+          console.warn('Data pallet kosong atau tidak valid');
+          hasEmpty = true;
+        }
+      } catch (err) {
+        console.error('Fetch pallet error', err);
+        setPalletOptions([]);
+        setPalletWeights({});
+        hasEmpty = true;
+      }
+  
+      // Tampilkan warning jika ada data kosong atau gagal
+      if (hasEmpty) {
+        message.warning('Ada data yang kosong, mohon cek Database atau koneksi');
       }
     };
-    fetchData();
+  
+    fetchAll();
   }, []);
+  
 
   // Add fish to selected list
   const handleAddFish = fishId => {
